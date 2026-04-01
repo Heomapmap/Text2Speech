@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Text2Speech"
 include(":app")
+include(":app:text2speech")
