@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "TTS"
+rootProject.name = "Text2Speech"
 include(":app")
  

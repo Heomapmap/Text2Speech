@@ -1,4 +1,4 @@
-package com.example.tts;
+package com.example.text2speech;
 
 import android.content.Context;
 

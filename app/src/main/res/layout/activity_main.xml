@@ -4,7 +4,9 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#1a1a1a">
+    android:background="#1a1a1a"
+    android:focusable="true"
+    android:focusableInTouchMode="true">
 
     <!-- Header -->
     <LinearLayout
@@ -262,7 +264,7 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_star"
-                android:tint="#666666" />
+                app:tint="#666666" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -286,7 +288,7 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_text"
-                android:tint="#2196F3" />
+                app:tint="#2196F3" />
 
             <TextView
                 android:layout_width="wrap_content"

@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.tts"
+    namespace = "com.example.text2speech"
     compileSdk {
         version = release(36)
     }

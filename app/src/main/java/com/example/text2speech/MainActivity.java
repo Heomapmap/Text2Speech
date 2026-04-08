@@ -1,16 +1,27 @@
-package com.example.tts;
+package com.example.text2speech;
 
+import android.content.Context;
 import android.content.Intent;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.example.text2speech.R;
 
 import java.util.Locale;
 
@@ -26,8 +37,15 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
     private float rate = 1.0f;
     private float pitch = 1.0f;
 
-    // 👉 THÊM BIẾN TRẠNG THÁI
+    //  THÊM BIẾN TRẠNG THÁI
     private boolean isPlaying = false;
+
+    // Cảm biến
+    private SensorManager sensorManager;
+    private Sensor proximitySensor;
+    private SensorEventListener proximityEventListener;
+    private long lastSensorTime = 0;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,7 +65,7 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         favoritesTab = findViewById(R.id.favoritesTab);
         textTab = findViewById(R.id.textTab);
 
-        // Init TTS
+        // Init
         textToSpeech = new TextToSpeech(this, this);
 
         // Rate
@@ -76,13 +94,19 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         playBtn.setOnClickListener(v -> {
 
             String text = textInput.getText().toString().trim();
+            int speech = textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+
+            if (text.isEmpty()){
+                Toast.makeText(this, "Vui lòng nhập văn bản!", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
             if (!isPlaying) {
                 // ▶️ → ⏸
                 playBtn.setImageResource(R.drawable.ic_pause);
                 isPlaying = true;
 
-                if (!text.isEmpty() && textToSpeech != null) {
+                if ( textToSpeech != null) {
                     textToSpeech.stop();
                     textToSpeech.setPitch(pitch);
                     textToSpeech.setSpeechRate(rate);
@@ -122,12 +146,94 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
         forwardBtn.setOnClickListener(v -> {
             // chưa cần xử lý
         });
+
+        // thiết lập cảm biến
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        proximitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY);
+
+        if (proximitySensor==null){
+            Log.e("Sensor", "Máy không hỗ trợ cảm biến tiệm cận!");
+        }
+        proximityEventListener = new SensorEventListener() {
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int accuracy) {
+
+            }
+
+            @Override
+            public void onSensorChanged(SensorEvent event) {
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - lastSensorTime < 1000) return;
+
+                if (event.values[0]<proximitySensor.getMaximumRange()){
+                    lastSensorTime = currentTime;
+                    if (textToSpeech != null && isPlaying){
+                        textToSpeech.stop();
+                        isPlaying = false;
+                        runOnUiThread(() -> playBtn.setImageResource(R.drawable.ic_play_button));
+                    }else {
+                        String text = textInput.getText().toString().trim();
+                        if (!text.isEmpty() && textToSpeech != null) {
+                            isPlaying = true;
+                            runOnUiThread(()->playBtn.setImageResource(R.drawable.ic_pause));
+                            textToSpeech.setPitch(pitch);
+                            textToSpeech.setSpeechRate(rate);
+                            textToSpeech.speak(text, TextToSpeech.QUEUE_FLUSH, null, "tts1");
+                        }
+                    }
+
+                }
+            }
+        };
+
+    }
+
+    // tắt bàn phím khi bấm ra ngoài
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        View v = getCurrentFocus();
+
+        if (v != null && (ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_MOVE) &&
+                v instanceof EditText &&
+                !v.getClass().getName().startsWith("android.webkit.")) {
+            int[] scrcoords = new int[2];
+            v.getLocationOnScreen(scrcoords);
+            float x = ev.getRawX() + v.getLeft() - scrcoords[0];
+            float y = ev.getRawY() + v.getTop() - scrcoords[1];
+
+            if (x < v.getLeft() || x > v.getRight() || y < v.getTop() || y > v.getBottom()) {
+                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev);
     }
 
     @Override
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS) {
             int result = textToSpeech.setLanguage(new Locale("vi", "VN"));
+            textToSpeech.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
+                @Override
+                public void onDone(String utteranceId) {
+                    runOnUiThread(()->{
+                        playBtn.setImageResource(R.drawable.ic_play_button);
+                        isPlaying = false;
+                    });
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+
+                }
+
+                @Override
+                public void onStart(String utteranceId) {
+
+                }
+            });
 
             if (result == TextToSpeech.LANG_MISSING_DATA ||
                     result == TextToSpeech.LANG_NOT_SUPPORTED) {
@@ -156,5 +262,21 @@ public class MainActivity extends AppCompatActivity implements TextToSpeech.OnIn
             textToSpeech.shutdown();
         }
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (proximitySensor != null) {
+            sensorManager.registerListener(proximityEventListener, proximitySensor, SensorManager.SENSOR_DELAY_NORMAL);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (proximitySensor != null) {
+            sensorManager.unregisterListener(proximityEventListener);
+        }
     }
 }

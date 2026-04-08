@@ -1,11 +1,11 @@
-package com.example.tts;
+package com.example.text2speech;
 
 import android.os.Bundle;
 import android.widget.LinearLayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.example.tts.R;
+import com.example.text2speech.R;
 
 public class FavoritesActivity extends AppCompatActivity {
 
