@@ -30,19 +30,21 @@ import androidx.core.content.ContextCompat;
 
 /**
  * MainActivity
- *
- * BE_VanQuan đóng góp:
+ * BE_VanQuan:
  *   - PlaybackService binding  → TTS chạy ngầm
  *   - FileReaderHelper + file picker → import TXT/PDF
- *
- * BE_Nhi đóng góp:
+ * BE_Nhi:
  *   - ProximitySensorManager   → cảm biến tiệm cận
  *   - SettingsActivity         → bật/tắt sensor
  *   - FavoritesActivity        → tab yêu thích
+ * BE_Phong:
+ *   - AppDatabase (Room)       → lưu lịch sử đọc
+ *   - saveReadingState()       → lưu vị trí câu + tên file
+ *   - loadReadingState()       → khôi phục phiên đọc trước
  */
 public class MainActivity extends AppCompatActivity {
 
-    // ── Views ─────────────────────────────────────
+    // ── Views  ───────────────────────────────────────
     private EditText     textInput;
     private SeekBar      rateSeekBar;
     private SeekBar      pitchSeekBar;
@@ -87,6 +89,9 @@ public class MainActivity extends AppCompatActivity {
     // ════════════════════════════════════════════════════════════════════
 
     private ActivityResultLauncher<String[]> filePickerLauncher;
+    /** URI file đang mở — dùng để lưu lịch sử */
+    private Uri    currentFileUri  = null;
+    private String currentFileName = "";
 
     // ════════════════════════════════════════════════════════════════════
     // PROXIMITY SENSOR (BE_Nhi)
@@ -94,10 +99,24 @@ public class MainActivity extends AppCompatActivity {
 
     private ProximitySensorManager proximitySensorManager;
 
-    // ── Hằng ─────────────────────────────────────────────────────────────────
-    private static final int    REQ_POST_NOTIF  = 301;
+    // ════════════════════════════════════════════════════════════════════
+    //  ROOM DATABASE + SHAREDPREFERENCES (BE_Phong)
+    // ════════════════════════════════════════════════════════════════════
+
+    /** Room database */
+    private AppDatabase db;
+    /** SharedPreferences nhẹ để lưu nhanh path file cuối */
+    private SharedPreferences ttsPref;
+
+    // ── Hằng SharedPreferences ────────────────────────────────────────────────
+    private static final String TTS_PREF_NAME      = "tts_pref";
+    private static final String KEY_LAST_FILE_PATH  = "last_file_path";
+    private static final String KEY_LAST_FILE_NAME  = "last_file_name";
+
+    // ── Hằng khác ─────────────────────────────────────────────────────────────
     private static final String PREFS_NAME      = "AppSettings";
     private static final String PREF_SENSOR_KEY = "sensor_enabled";
+    private static final int    REQ_POST_NOTIF       = 301;
 
     // ════════════════════════════════════════════════════════════════════
     //  LIFECYCLE
@@ -108,7 +127,12 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        FileReaderHelper.init(this);  // Khởi tạo PDFBox trước khi đọc PDF
+        // Khởi tạo PDFBox trước khi đọc PDF
+        FileReaderHelper.init(this);
+
+        // Khởi tạo Room Database và SharedPreferences
+        db      = AppDatabase.getDatabase(getApplicationContext());
+        ttsPref = getSharedPreferences(TTS_PREF_NAME, MODE_PRIVATE);
 
         bindViews();
         setupFilePicker();     // Phải đăng ký trước onStart
@@ -118,13 +142,13 @@ public class MainActivity extends AppCompatActivity {
         setupSensor();         // Proximity sensor
         setupSettings();       // Mở SettingsActivity
 
-        requestNotificationPermission(); // Android 13+
+        // Khôi phục file đọc dở từ phiên trước
+        loadReadingState();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        // startService đảm bảo service sống kể cả khi Activity bị ẩn
         Intent svcIntent = new Intent(this, PlaybackService.class);
         startService(svcIntent);
         bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
@@ -150,8 +174,13 @@ public class MainActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         //Luôn hủy đăng ký sensor khi Activity không hiển thị (tiết kiệm pin)
-        if (proximitySensorManager != null) {
-            proximitySensorManager.unregister();
+        if (proximitySensorManager != null) proximitySensorManager.unregister();
+
+        // Lưu vị trí câu đang đọc khi rời Activity
+        if (!currentFileName.isEmpty() && currentFileUri != null
+                && isServiceBound && boundService != null) {
+            int idx = boundService.getCurrentSentenceIndex();
+            saveReadingState(currentFileName, currentFileUri.toString(), idx);
         }
     }
 
@@ -183,9 +212,9 @@ public class MainActivity extends AppCompatActivity {
         settingsBtn  = findViewById(R.id.settingsBtn);
         favoritesTab = findViewById(R.id.favoritesTab);
         textTab      = findViewById(R.id.textTab);
-        btnOpenTxt  = findViewById(R.id.btnOpenTxt);
-        btnOpenPdf  = findViewById(R.id.btnOpenPdf);
-        tvFileName  = findViewById(R.id.tvFileName);
+        btnOpenTxt   = findViewById(R.id.btnOpenTxt);
+        btnOpenPdf   = findViewById(R.id.btnOpenPdf);
+        tvFileName   = findViewById(R.id.tvFileName);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -215,13 +244,24 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(String text) {
                 runOnUiThread(() -> {
                     textInput.setText(text);
+
+                    // Lấy tên file từ URI
                     String path = uri.getPath();
                     String name = (path != null && path.contains("/"))
-                            ? path.substring(path.lastIndexOf('/') + 1) : uri.toString();
+                            ? path.substring(path.lastIndexOf('/') + 1)
+                            : uri.toString();
+
                     tvFileName.setText(name);
+                    currentFileUri  = uri;
+                    currentFileName = name;
+
+                    // Lưu file mới vào lịch sử, index = 0 (đọc từ đầu)
+                    saveReadingState(name, uri.toString(), 0);
+
                     Toast.makeText(MainActivity.this, "Đã tải file!", Toast.LENGTH_SHORT).show();
                 });
             }
+
             @Override
             public void onError(String msg) {
                 runOnUiThread(() -> {
@@ -242,10 +282,8 @@ public class MainActivity extends AppCompatActivity {
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 currentRate = Math.max(progress / 100f, 0.1f);
                 rateValue.setText(progress + "%");
-                // Cập nhật service nếu đang chạy
-                if (fromUser && isServiceBound && boundService != null) {
+                if (fromUser && isServiceBound && boundService != null)
                     boundService.setTtsRate(currentRate);
-                }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
             @Override public void onStopTrackingTouch(SeekBar sb) {}
@@ -256,9 +294,8 @@ public class MainActivity extends AppCompatActivity {
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 currentPitch = Math.max(progress / 100f, 0.1f);
                 pitchValue.setText(progress + "%");
-                if (fromUser && isServiceBound && boundService != null) {
+                if (fromUser && isServiceBound && boundService != null)
                     boundService.setTtsPitch(currentPitch);
-                }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
             @Override public void onStopTrackingTouch(SeekBar sb) {}
@@ -270,8 +307,6 @@ public class MainActivity extends AppCompatActivity {
     // ════════════════════════════════════════════════════════════════════
 
     private void setupButtons() {
-
-        // Play / Pause → gọi service để chạy ngầm được
         playBtn.setOnClickListener(v -> {
             String text = textInput.getText().toString().trim();
             if (text.isEmpty()) {
@@ -285,20 +320,17 @@ public class MainActivity extends AppCompatActivity {
             handlePlayPause(text);
         });
 
-        // Reset
         resetBtn.setOnClickListener(v -> {
             rateSeekBar.setProgress(50);
             pitchSeekBar.setProgress(50);
         });
 
-        // Back = dừng hẳn
         backBtn.setOnClickListener(v -> stopPlayback());
 
-        // Forward — chưa implement
         forwardBtn.setOnClickListener(v -> {});
-
         // Favorites tab — mở FavoritesActivity (BE_Nhi)
-        favoritesTab.setOnClickListener(v -> navigateToFavorites());
+        favoritesTab.setOnClickListener(v ->
+                startActivity(new Intent(this, FavoritesActivity.class)));
     }
 
     private void handlePlayPause(String text) {
@@ -312,7 +344,6 @@ public class MainActivity extends AppCompatActivity {
             boundService.speakFullText(text);
             playBtn.setImageResource(R.drawable.ic_pause);
         } else {
-            // Đang đọc / đang pause → toggle
             boundService.togglePauseResume();
             syncPlayIcon();
         }
@@ -357,15 +388,79 @@ public class MainActivity extends AppCompatActivity {
     // ════════════════════════════════════════════════════════════════════
 
     private void setupSettings() {
-        settingsBtn.setOnClickListener(v -> {
-            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
-            startActivity(intent);
-        });
+        settingsBtn.setOnClickListener(v ->
+                startActivity(new Intent(this, SettingsActivity.class)));
     }
 
-    private void navigateToFavorites() {
-        Intent intent = new Intent(this, FavoritesActivity.class);
-        startActivity(intent);
+    // ════════════════════════════════════════════════════════════════════
+    //  SAVE / LOAD READING STATE (BE_Phong)
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Lưu trạng thái đọc vào Room Database + SharedPreferences.
+     *
+     * @param fileName     Tên file hiển thị (ví dụ "Triết Mác-Lênin.pdf")
+     * @param filePath     Đường dẫn / URI string của file
+     * @param currentIndex Vị trí câu đang đọc (từ PlaybackService.getCurrentSentenceIndex())
+     */
+    public void saveReadingState(String fileName, String filePath, int currentIndex) {
+        // SharedPreferences: lưu nhanh path file cuối
+        ttsPref.edit()
+                .putString(KEY_LAST_FILE_PATH, filePath)
+                .putString(KEY_LAST_FILE_NAME, fileName)
+                .apply();
+
+        // Room: lưu tiến độ đọc chi tiết
+        new Thread(() -> {
+            ReadingHistory existing = db.historyDao().getHistoryByPath(filePath);
+            if (existing == null) {
+                db.historyDao().insert(new ReadingHistory(fileName, filePath, currentIndex));
+            } else {
+                existing.lastReadIndex = currentIndex;
+                db.historyDao().update(existing);
+            }
+        }).start();
+    }
+
+    /**
+     * Khôi phục trạng thái đọc từ phiên trước.
+     * Copy nguyên logic từ Text2SpeechActivity (BE_Phong).
+     *
+     * Gọi trong onCreate() — nếu người dùng từng đọc file nào thì
+     * hiển thị lại tên file và cuộn đến câu đã đọc dở.
+     */
+    private void loadReadingState() {
+        String savedPath = ttsPref.getString(KEY_LAST_FILE_PATH, "");
+        String savedName = ttsPref.getString(KEY_LAST_FILE_NAME, "");
+
+        if (savedPath.isEmpty()) return; // Chưa từng đọc file nào
+
+        // Cập nhật tên file ngay trên main thread (nhẹ)
+        currentFileName = savedName;
+        tvFileName.setText(savedName.isEmpty() ? "File từ phiên trước" : savedName);
+
+        // Truy vấn Room trên background thread
+        new Thread(() -> {
+            ReadingHistory history = db.historyDao().getHistoryByPath(savedPath);
+            if (history == null) return;
+
+            int    savedIndex = history.lastReadIndex;
+            String savedFile  = history.fileName;
+
+            runOnUiThread(() -> {
+                tvFileName.setText(savedFile);
+                // TODO: Nếu sau này dùng RecyclerView thay EditText,
+                // gọi adapter.setHighlightPosition(savedIndex) và
+                // recyclerView.scrollToPosition(savedIndex) tại đây.
+                // Hiện tại hiển thị thông báo cho người dùng biết có thể tiếp tục.
+                if (savedIndex > 0) {
+                    Toast.makeText(this,
+                            "Phiên trước đọc đến câu " + (savedIndex + 1)
+                                    + " — nhấn Play để tiếp tục",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -393,12 +488,10 @@ public class MainActivity extends AppCompatActivity {
         if (focused instanceof EditText
                 && (ev.getAction() == MotionEvent.ACTION_UP
                 || ev.getAction() == MotionEvent.ACTION_MOVE)) {
-
             int[] loc = new int[2];
             focused.getLocationOnScreen(loc);
             float x = ev.getRawX() + focused.getLeft() - loc[0];
             float y = ev.getRawY() + focused.getTop()  - loc[1];
-
             if (x < focused.getLeft() || x > focused.getRight()
                     || y < focused.getTop()  || y > focused.getBottom()) {
                 InputMethodManager imm =

@@ -46,6 +46,19 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!--Context menu-->
+        <activity
+            android:name=".ContextMenuActivity"
+            android:exported="true"
+            android:label="TTS"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>

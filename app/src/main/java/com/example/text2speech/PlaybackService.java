@@ -32,17 +32,20 @@ import java.util.Locale;
  */
 public class PlaybackService extends Service implements TextToSpeech.OnInitListener {
 
-    private static final String TAG = "TtsPlaybackService";
+    private static final String TAG = "PlaybackService";
 
     // ── Notification constants ────────────────────────────────────────────────
-    /** ID channel */
-    static final String TTS_NOTIF_CHANNEL_ID = "tts_bg_channel_vq";
-    static final int    TTS_NOTIF_ID          = 2200;
+    /** ID channel – đặt tên riêng để không đụng với nhánh BE_Nhi */
+    static final String NOTIF_CHANNEL_ID = "tts_bg_channel_vq";
+    static final int    NOTIF_ID          = 2200;
 
     // ── Broadcast actions cho các nút trên notification ──────────────────────
     // Dùng package name đầy đủ để tránh xung đột với receiver khác
-    static final String ACTION_TTS_VQ_TOGGLE = "com.example.text2speech.vq.TOGGLE";
-    static final String ACTION_TTS_VQ_STOP   = "com.example.text2speech.vq.STOP";
+    static final String ACTION_TOGGLE     = "com.example.text2speech.vq.TOGGLE";
+    static final String ACTION_STOP       = "com.example.text2speech.vq.STOP";
+    // 2.1: Nhận text bôi đen từ ContextMenuActivity
+    static final String ACTION_SPEAK_NEW  = "com.example.text2speech.vq.SPEAK_NEW";
+    static final String EXTRA_TEXT_TO_SPEAK = "text_to_speak";
 
     // ── TextToSpeech engine ───────────────────────────────────────────────────
     private TextToSpeech ttsEngine;
@@ -169,11 +172,19 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.getAction() != null) {
             switch (intent.getAction()) {
-                case ACTION_TTS_VQ_TOGGLE:
+                case ACTION_TOGGLE:
                     togglePauseResume();
                     break;
-                case ACTION_TTS_VQ_STOP:
+                case ACTION_STOP:
                     stopReadingAndService();
+                    break;
+                // Text bôi đen từ ContextMenuActivity → đọc ngay
+                case ACTION_SPEAK_NEW:
+                    String newText = intent.getStringExtra(EXTRA_TEXT_TO_SPEAK);
+                    if (newText != null && !newText.isEmpty()) {
+                        startForeground(NOTIF_ID, buildNotification());
+                        speakFullText(newText);
+                    }
                     break;
             }
         }
@@ -219,7 +230,7 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
         isPaused       = false;
 
         // Đưa Service lên foreground trước khi đọc (hiện notification)
-        startForeground(TTS_NOTIF_ID, buildNotification());
+        startForeground(NOTIF_ID, buildNotification());
         speakCurrentSentence();
     }
 
@@ -339,7 +350,7 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    TTS_NOTIF_CHANNEL_ID,
+                    NOTIF_CHANNEL_ID,
                     "Phát âm ngầm TTS",
                     NotificationManager.IMPORTANCE_LOW   // LOW = không có âm thanh thông báo
             );
@@ -351,7 +362,7 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
 
     /** Cập nhật notification hiện tại (không tạo mới) */
     private void updateNotification() {
-        notifManager.notify(TTS_NOTIF_ID, buildNotification());
+        notifManager.notify(NOTIF_ID, buildNotification());
     }
 
     /**
@@ -372,14 +383,14 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
 
         // Nút Toggle (Play/Pause) → gửi action đến onStartCommand
         Intent toggleIntent = new Intent(this, PlaybackService.class);
-        toggleIntent.setAction(ACTION_TTS_VQ_TOGGLE);
+        toggleIntent.setAction(ACTION_TOGGLE);
         PendingIntent togglePending = PendingIntent.getService(
                 this, 1, toggleIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         // Nút Dừng hẳn
         Intent stopIntent = new Intent(this, PlaybackService.class);
-        stopIntent.setAction(ACTION_TTS_VQ_STOP);
+        stopIntent.setAction(ACTION_STOP);
         PendingIntent stopPending = PendingIntent.getService(
                 this, 2, stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -403,7 +414,7 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
             statusText    = "Đã đọc xong";
         }
 
-        return new NotificationCompat.Builder(this, TTS_NOTIF_CHANNEL_ID)
+        return new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_play_button)
                 .setContentTitle("Text to Speech")
                 .setContentText(statusText)
