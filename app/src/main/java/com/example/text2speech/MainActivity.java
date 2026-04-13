@@ -32,11 +32,11 @@ import androidx.core.content.ContextCompat;
  * MainActivity
  *
  * BE_VanQuan đóng góp:
- *   - PlaybackService binding  → TTS chạy ngầm (2.2)
- *   - FileReaderHelper + file picker → import TXT/PDF (2.3)
+ *   - PlaybackService binding  → TTS chạy ngầm
+ *   - FileReaderHelper + file picker → import TXT/PDF
  *
  * BE_Nhi đóng góp:
- *   - ProximitySensorManager   → cảm biến tiệm cận (2.4)
+ *   - ProximitySensorManager   → cảm biến tiệm cận
  *   - SettingsActivity         → bật/tắt sensor
  *   - FavoritesActivity        → tab yêu thích
  */
