@@ -38,7 +38,6 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
     private static final String TAG = "PlaybackService";
 
     // ── Notification constants ────────────────────────────────────────────────
-    /** ID channel – đặt tên riêng để không đụng với nhánh BE_Nhi */
     static final String NOTIF_CHANNEL_ID = "tts_bg_channel_vq";
     static final int    NOTIF_ID          = 2200;
 
@@ -305,21 +304,18 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
      */
     public void setVoiceByName(String voiceName) {
         if (ttsEngine == null || !isTtsEngineReady || voiceName == null) return;
-        try {
-            java.util.Set<android.speech.tts.Voice> voices = ttsEngine.getVoices();
-            if (voices == null) return;
-            for (android.speech.tts.Voice v : voices) {
-                if (v.getName().equals(voiceName)) {
-                    selectedVoice = v;
-                    ttsEngine.setVoice(v);
-                    Log.d(TAG, "Voice đã chọn: " + v.getName()
-                            + " | " + v.getLocale().getDisplayLanguage()
-                            + " | online=" + v.isNetworkConnectionRequired());
-                    return;
-                }
+
+        java.util.List<android.speech.tts.Voice> voices = getAvailableVoices();
+        if (voices == null) return;
+
+        for (android.speech.tts.Voice v : voices) {
+            if (v.getName().equals(voiceName)) {
+                selectedVoice = v;
+                ttsEngine.setVoice(v);
+                // Đảm bảo ngôn ngữ cũng được set khớp với voice
+                ttsEngine.setLanguage(v.getLocale());
+                return;
             }
-        } catch (Exception e) {
-            Log.e(TAG, "setVoice lỗi: " + e.getMessage());
         }
     }
 
@@ -330,19 +326,27 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
     public java.util.List<android.speech.tts.Voice> getAvailableVoices() {
         if (ttsEngine == null || !isTtsEngineReady) return null;
         try {
-            java.util.Set<android.speech.tts.Voice> voices = ttsEngine.getVoices();
-            if (voices == null) return null;
-            java.util.List<android.speech.tts.Voice> list = new java.util.ArrayList<>(voices);
-            // Sắp xếp: offline trước, theo locale
-            list.sort((a, b) -> {
+            java.util.Set<android.speech.tts.Voice> allVoicesSet = ttsEngine.getVoices();
+            if (allVoicesSet == null) return null;
+            java.util.List<android.speech.tts.Voice> vietnameseVoices = new java.util.ArrayList<>();
+            for (android.speech.tts.Voice v : allVoicesSet) {
+                // Chỉ lấy các giọng có ngôn ngữ là tiếng Việt (vi)
+                if (v.getLocale().getLanguage().startsWith("vi")) {
+                    vietnameseVoices.add(v);
+                }
+            }
+
+            // Sắp xếp: Giọng Offline lên đầu, sau đó mới đến giọng Online
+            vietnameseVoices.sort((a, b) -> {
                 boolean aOffline = !a.isNetworkConnectionRequired();
                 boolean bOffline = !b.isNetworkConnectionRequired();
                 if (aOffline != bOffline) return aOffline ? -1 : 1;
-                return a.getLocale().toString().compareTo(b.getLocale().toString());
+                return a.getName().compareTo(b.getName());
             });
-            return list;
+
+            return vietnameseVoices;
         } catch (Exception e) {
-            Log.e(TAG, "getVoices lỗi: " + e.getMessage());
+            Log.e(TAG, "Lỗi lọc giọng: " + e.getMessage());
             return null;
         }
     }
