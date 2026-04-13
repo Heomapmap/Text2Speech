@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.data;
 
 import android.content.Context;
 import androidx.room.Database;

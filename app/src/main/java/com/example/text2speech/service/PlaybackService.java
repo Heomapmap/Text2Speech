@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.service;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -18,24 +18,15 @@ import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
+import com.example.text2speech.ui.MainActivity;
+import com.example.text2speech.R;
+
 import java.util.Locale;
 
 /**
  * ════════════════════════════════════════════════════════════════════
- *  PlaybackService  –  TÍNH NĂNG 2.2: Chạy ngầm
+ *  PlaybackService  –  TÍNH NĂNG: Chạy ngầm
  * ════════════════════════════════════════════════════════════════════
- *
- *  Là Foreground Service nên hệ thống KHÔNG kill process khi người
- *  dùng khóa màn hình hoặc chuyển sang app khác.
- *
- *  Kiến trúc:
- *    ┌──────────────────┐  bind   ┌─────────────────────────────┐
- *    │  MainActivity    │ ──────► │  PlaybackService         │
- *    │  (UI controls)   │ ◄────── │  - TextToSpeech engine      │
- *    └──────────────────┘ Binder  │  - Notification + actions   │
- *                                 │  - Câu-theo-câu playback    │
- *                                 └─────────────────────────────┘
- *
  *  Cách dùng từ Activity:
  *    1. bindService() + startService() trong onCreate/onStart
  *    2. Gọi ttsService.speakFullText(text)
@@ -53,11 +44,11 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
 
     // ── Broadcast actions cho các nút trên notification ──────────────────────
     // Dùng package name đầy đủ để tránh xung đột với receiver khác
-    static final String ACTION_TOGGLE     = "com.example.text2speech.vq.TOGGLE";
-    static final String ACTION_STOP       = "com.example.text2speech.vq.STOP";
-    // 2.1: Nhận text bôi đen từ ContextMenuActivity
-    static final String ACTION_SPEAK_NEW  = "com.example.text2speech.vq.SPEAK_NEW";
-    static final String EXTRA_TEXT_TO_SPEAK = "text_to_speak";
+    public static final String ACTION_TOGGLE     = "com.example.text2speech.vq.TOGGLE";
+    public static final String ACTION_STOP       = "com.example.text2speech.vq.STOP";
+    // Nhận text bôi đen từ ContextMenuActivity
+    public static final String ACTION_SPEAK_NEW  = "com.example.text2speech.vq.SPEAK_NEW";
+    public static final String EXTRA_TEXT_TO_SPEAK = "text_to_speak";
 
     // ── TextToSpeech engine ───────────────────────────────────────────────────
     private TextToSpeech ttsEngine;

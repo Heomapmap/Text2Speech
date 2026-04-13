@@ -27,7 +27,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Text2Speech">
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -38,17 +38,17 @@
         </activity>
 
         <!--Màn hình settings bặt/tắt sensor -->
-        <activity android:name="SettingsActivity" />
+        <activity android:name=".ui.SettingsActivity" />
 
         <!--Foreground Service -->
         <service
-            android:name=".PlaybackService"
+            android:name=".service.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
         <!--Context menu-->
         <activity
-            android:name=".ContextMenuActivity"
+            android:name=".ui.ContextMenuActivity"
             android:exported="true"
             android:label="TTS"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">

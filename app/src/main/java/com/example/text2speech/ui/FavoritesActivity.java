@@ -1,15 +1,18 @@
-package com.example.text2speech;
+package com.example.text2speech.ui;
 
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.example.text2speech.R;
+import com.example.text2speech.data.AppDatabase;
+import com.example.text2speech.data.ReadingHistory;
 
 import java.util.List;
 

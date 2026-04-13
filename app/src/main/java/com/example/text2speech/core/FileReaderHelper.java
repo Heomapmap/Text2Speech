@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.core;
 
 import android.content.ContentResolver;
 import android.content.Context;

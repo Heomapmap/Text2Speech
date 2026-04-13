@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.ui;
 
 import android.Manifest;
 import android.app.AlertDialog;
@@ -29,6 +29,13 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
+import com.example.text2speech.core.ProximitySensorManager;
+import com.example.text2speech.R;
+import com.example.text2speech.core.FileReaderHelper;
+import com.example.text2speech.data.AppDatabase;
+import com.example.text2speech.data.ReadingHistory;
+import com.example.text2speech.service.PlaybackService;
 
 import java.util.List;
 

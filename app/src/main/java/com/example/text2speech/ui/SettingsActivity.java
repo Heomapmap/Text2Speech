@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.ui;
 
 import android.content.SharedPreferences;
 import android.os.Bundle;
@@ -6,6 +6,8 @@ import android.widget.ImageButton;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
+
+import com.example.text2speech.R;
 
 public class SettingsActivity extends AppCompatActivity {
     @Override

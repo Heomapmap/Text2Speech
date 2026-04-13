@@ -1,4 +1,4 @@
-package com.example.text2speech;
+package com.example.text2speech.data;
 
 import androidx.room.Entity;
 import androidx.room.PrimaryKey;
