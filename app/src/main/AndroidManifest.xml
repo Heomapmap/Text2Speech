@@ -37,6 +37,10 @@
             </intent-filter>
         </activity>
 
+        <!--Màn hình favorites-->
+        <activity
+            android:name=".ui.FavoritesActivity" />
+
         <!--Màn hình settings bặt/tắt sensor -->
         <activity android:name=".ui.SettingsActivity" />
 
