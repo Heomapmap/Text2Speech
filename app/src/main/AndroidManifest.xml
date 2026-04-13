@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--Chạy ngầm -->
     <!-- Cho phép Service chạy foreground -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Khai báo loại foreground service là mediaPlayback -->
@@ -10,6 +11,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Storage Access Framework không cần permission đặc biệt,
          nhưng nếu muốn đọc đường dẫn cũ thì cần READ_EXTERNAL_STORAGE -->
+
+    <!--Tương tác file -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -34,11 +37,10 @@
             </intent-filter>
         </activity>
 
-        <!--
-            TtsPlaybackService – Foreground Service cho tính năng 2.2
-            foregroundServiceType="mediaPlayback" bắt buộc từ Android 14 (API 34)
-            khi service phát âm thanh.
-        -->
+        <!--Màn hình settings bặt/tắt sensor -->
+        <activity android:name="SettingsActivity" />
+
+        <!--Foreground Service -->
         <service
             android:name=".PlaybackService"
             android:exported="false"

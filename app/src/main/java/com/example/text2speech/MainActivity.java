@@ -5,7 +5,9 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -26,50 +28,76 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+/**
+ * MainActivity
+ *
+ * BE_VanQuan đóng góp:
+ *   - PlaybackService binding  → TTS chạy ngầm (2.2)
+ *   - FileReaderHelper + file picker → import TXT/PDF (2.3)
+ *
+ * BE_Nhi đóng góp:
+ *   - ProximitySensorManager   → cảm biến tiệm cận (2.4)
+ *   - SettingsActivity         → bật/tắt sensor
+ *   - FavoritesActivity        → tab yêu thích
+ */
 public class MainActivity extends AppCompatActivity {
 
-    private EditText    textInput;       // ID: textInput  (EditText nhập văn bản)
-    private SeekBar     rateSeekBar;     // ID: rateSeekBar
-    private SeekBar     pitchSeekBar;    // ID: pitchSeekBar
-    private TextView    rateValue;       // ID: rateValue
-    private TextView    pitchValue;      // ID: pitchValue
-    private ImageButton playBtn;         // ID: playBtn
-    private ImageButton backBtn;         // ID: backBtn
-    private ImageButton forwardBtn;      // ID: forwardBtn
-    private TextView    resetBtn;        // ID: resetBtn
-    private LinearLayout favoritesTab;  // ID: favoritesTab
-    private LinearLayout textTab;       // ID: textTab
-    private ImageButton settingsBtn;    // ID: settingsBtn
-    private TextView    btnOpenTxt;     // ID: btnOpenTxt
-    private TextView    btnOpenPdf;     // ID: btnOpenPdf
-    private TextView    tvFileName;     // ID: tvFileName
+    // ── Views ─────────────────────────────────────
+    private EditText     textInput;
+    private SeekBar      rateSeekBar;
+    private SeekBar      pitchSeekBar;
+    private TextView     rateValue;
+    private TextView     pitchValue;
+    private TextView     resetBtn;
+    private ImageButton  playBtn;
+    private ImageButton  backBtn;
+    private ImageButton  forwardBtn;
+    private ImageButton  settingsBtn;
+    private LinearLayout favoritesTab;
+    private LinearLayout textTab;
+    private TextView btnOpenTxt;   // chip chọn file TXT
+    private TextView btnOpenPdf;   // chip chọn file PDF
+    private TextView tvFileName;   // hiển thị tên file đã chọn
+    private float currentRate  = 1.0f;
+    private float currentPitch = 1.0f;
 
-    // ── Service binding (2.2) ─────────────────────────────────────────────────
-    private PlaybackService boundTtsService   = null;
-    private boolean            isTtsServiceBound = false;
+    // ════════════════════════════════════════════════════════════════════
+    //  PLAYBACK SERVICE (BE_VanQuan)
+    // ════════════════════════════════════════════════════════════════════
 
-    private final ServiceConnection ttsServiceConn = new ServiceConnection() {
+    private PlaybackService boundService   = null;
+    private boolean         isServiceBound = false;
+
+    private final ServiceConnection serviceConn = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
-            PlaybackService.LocalBinder lb = (PlaybackService.LocalBinder) binder;
-            boundTtsService   = lb.getService();
-            isTtsServiceBound = true;
+            boundService   = ((PlaybackService.LocalBinder) binder).getService();
+            isServiceBound = true;
+            syncPlayIcon();
         }
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            boundTtsService   = null;
-            isTtsServiceBound = false;
+            boundService   = null;
+            isServiceBound = false;
         }
     };
 
-    // ── File picker (2.3) ─────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════
+    // FILE PICKER (BE_VanQuan)
+    // ════════════════════════════════════════════════════════════════════
+
     private ActivityResultLauncher<String[]> filePickerLauncher;
 
-    private static final int   REQ_POST_NOTIF = 301;
+    // ════════════════════════════════════════════════════════════════════
+    // PROXIMITY SENSOR (BE_Nhi)
+    // ════════════════════════════════════════════════════════════════════
 
-    // ── SeekBar: progress 0-100 → rate 0.5x–2.0x (step 0.015) ───────────────
-    private float currentRate  = 1.0f;
-    private float currentPitch = 1.0f;
+    private ProximitySensorManager proximitySensorManager;
+
+    // ── Hằng ─────────────────────────────────────────────────────────────────
+    private static final int    REQ_POST_NOTIF  = 301;
+    private static final String PREFS_NAME      = "AppSettings";
+    private static final String PREF_SENSOR_KEY = "sensor_enabled";
 
     // ════════════════════════════════════════════════════════════════════
     //  LIFECYCLE
@@ -80,39 +108,62 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        FileReaderHelper.init(this);   // Khởi tạo PDFBox (bắt buộc trước khi đọc PDF)
+        FileReaderHelper.init(this);  // Khởi tạo PDFBox trước khi đọc PDF
 
         bindViews();
-        setupFilePicker();             // Đăng ký file picker TRƯỚC onStart
-        setupFileButtons();            // 2.3
+        setupFilePicker();     // Phải đăng ký trước onStart
+        setupFileButtons();    // chip TXT / PDF
         setupSeekBars();
-        setupButtons();                // Kết nối service
-        requestNotificationPermission();
+        setupButtons();        // Nối service
+        setupSensor();         // Proximity sensor
+        setupSettings();       // Mở SettingsActivity
+
+        requestNotificationPermission(); // Android 13+
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        // Start + bind: service sống độc lập kể cả khi Activity bị ẩn (2.2)
-        Intent svc = new Intent(this, PlaybackService.class);
-        startService(svc);
-        bindService(svc, ttsServiceConn, Context.BIND_AUTO_CREATE);
+        // startService đảm bảo service sống kể cả khi Activity bị ẩn
+        Intent svcIntent = new Intent(this, PlaybackService.class);
+        startService(svcIntent);
+        bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Đọc lại trạng thái sensor từ SharedPreferences
+        // → người dùng có thể đã thay đổi trong SettingsActivity
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        boolean sensorEnabled = prefs.getBoolean(PREF_SENSOR_KEY, true);
+
+        if (proximitySensorManager != null) {
+            proximitySensorManager.setEnabled(sensorEnabled);
+            if (sensorEnabled) {
+                proximitySensorManager.register();
+            }
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        //Luôn hủy đăng ký sensor khi Activity không hiển thị (tiết kiệm pin)
+        if (proximitySensorManager != null) {
+            proximitySensorManager.unregister();
+        }
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        if (isTtsServiceBound) {
-            unbindService(ttsServiceConn);
-            isTtsServiceBound = false;
-            boundTtsService   = null;
+        // Unbind nhưng KHÔNG stopService → PlaybackService tiếp tục chạy ngầm
+        if (isServiceBound) {
+            unbindService(serviceConn);
+            isServiceBound = false;
+            boundService   = null;
         }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        // KHÔNG stop service ở đây → TTS tiếp tục chạy sau khi đóng app
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -125,21 +176,20 @@ public class MainActivity extends AppCompatActivity {
         pitchSeekBar = findViewById(R.id.pitchSeekBar);
         rateValue    = findViewById(R.id.rateValue);
         pitchValue   = findViewById(R.id.pitchValue);
+        resetBtn     = findViewById(R.id.resetBtn);
         playBtn      = findViewById(R.id.playBtn);
         backBtn      = findViewById(R.id.backBtn);
         forwardBtn   = findViewById(R.id.forwardBtn);
-        resetBtn     = findViewById(R.id.resetBtn);
+        settingsBtn  = findViewById(R.id.settingsBtn);
         favoritesTab = findViewById(R.id.favoritesTab);
         textTab      = findViewById(R.id.textTab);
-        settingsBtn  = findViewById(R.id.settingsBtn);
-
-        btnOpenTxt   = findViewById(R.id.btnOpenTxt);
-        btnOpenPdf   = findViewById(R.id.btnOpenPdf);
-        tvFileName   = findViewById(R.id.tvFileName);
+        btnOpenTxt  = findViewById(R.id.btnOpenTxt);
+        btnOpenPdf  = findViewById(R.id.btnOpenPdf);
+        tvFileName  = findViewById(R.id.tvFileName);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  TÍNH NĂNG 2.3 – FILE PICKER
+    // FILE PICKER (BE_VanQuan)
     // ════════════════════════════════════════════════════════════════════
 
     private void setupFilePicker() {
@@ -152,7 +202,6 @@ public class MainActivity extends AppCompatActivity {
     private void setupFileButtons() {
         btnOpenTxt.setOnClickListener(v ->
                 filePickerLauncher.launch(new String[]{"text/plain"}));
-
         btnOpenPdf.setOnClickListener(v ->
                 filePickerLauncher.launch(new String[]{"application/pdf"}));
     }
@@ -166,7 +215,6 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(String text) {
                 runOnUiThread(() -> {
                     textInput.setText(text);
-                    // Lấy tên file từ path cuối URI
                     String path = uri.getPath();
                     String name = (path != null && path.contains("/"))
                             ? path.substring(path.lastIndexOf('/') + 1) : uri.toString();
@@ -174,7 +222,6 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(MainActivity.this, "Đã tải file!", Toast.LENGTH_SHORT).show();
                 });
             }
-
             @Override
             public void onError(String msg) {
                 runOnUiThread(() -> {
@@ -193,11 +240,11 @@ public class MainActivity extends AppCompatActivity {
         rateSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                // Giống BE_Nhi: progress 0–100 → rate 0.1–2.0
                 currentRate = Math.max(progress / 100f, 0.1f);
                 rateValue.setText(progress + "%");
-                if (fromUser && isTtsServiceBound && boundTtsService != null) {
-                    boundTtsService.setTtsRate(currentRate);
+                // Cập nhật service nếu đang chạy
+                if (fromUser && isServiceBound && boundService != null) {
+                    boundService.setTtsRate(currentRate);
                 }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
@@ -209,8 +256,8 @@ public class MainActivity extends AppCompatActivity {
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 currentPitch = Math.max(progress / 100f, 0.1f);
                 pitchValue.setText(progress + "%");
-                if (fromUser && isTtsServiceBound && boundTtsService != null) {
-                    boundTtsService.setTtsPitch(currentPitch);
+                if (fromUser && isServiceBound && boundService != null) {
+                    boundService.setTtsPitch(currentPitch);
                 }
             }
             @Override public void onStartTrackingTouch(SeekBar sb) {}
@@ -219,71 +266,106 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  BUTTONS — playBtn nối vào service
+    //  BUTTONS
     // ════════════════════════════════════════════════════════════════════
 
     private void setupButtons() {
 
-        // Play / Pause — gọi service thay vì TTS trực tiếp (để chạy ngầm)
+        // Play / Pause → gọi service để chạy ngầm được
         playBtn.setOnClickListener(v -> {
             String text = textInput.getText().toString().trim();
             if (text.isEmpty()) {
                 Toast.makeText(this, "Vui lòng nhập văn bản!", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (!isTtsServiceBound || boundTtsService == null) {
+            if (!isServiceBound || boundService == null) {
                 Toast.makeText(this, "Service chưa sẵn sàng!", Toast.LENGTH_SHORT).show();
                 return;
             }
-            if (boundTtsService.isCurrentlyReading() || boundTtsService.isCurrentlyPaused()) {
-                // Đang đọc hoặc tạm dừng → toggle
-                boundTtsService.togglePauseResume();
-                syncPlayIcon();
-            } else {
-                // Chưa đọc → bắt đầu từ đầu
-                boundTtsService.setTtsRate(currentRate);
-                boundTtsService.setTtsPitch(currentPitch);
-                boundTtsService.speakFullText(text);
-                playBtn.setImageResource(R.drawable.ic_pause);
-            }
+            handlePlayPause(text);
         });
 
-        // Reset seekbars
+        // Reset
         resetBtn.setOnClickListener(v -> {
             rateSeekBar.setProgress(50);
             pitchSeekBar.setProgress(50);
         });
 
         // Back = dừng hẳn
-        backBtn.setOnClickListener(v -> {
-            if (isTtsServiceBound && boundTtsService != null) {
-                boundTtsService.stopReadingAndService();
-            }
-            playBtn.setImageResource(R.drawable.ic_play_button);
-        });
+        backBtn.setOnClickListener(v -> stopPlayback());
 
         // Forward — chưa implement
         forwardBtn.setOnClickListener(v -> {});
 
-        // Favorites tab
-        favoritesTab.setOnClickListener(v -> {
-            // Placeholder
-        });
-
-        // Settings
-        settingsBtn.setOnClickListener(v -> {
-            // Placeholder hoặc mở SettingsActivity nếu có
-        });
+        // Favorites tab — mở FavoritesActivity (BE_Nhi)
+        favoritesTab.setOnClickListener(v -> navigateToFavorites());
     }
 
-    /** Đồng bộ icon play/pause theo trạng thái service */
+    private void handlePlayPause(String text) {
+        boolean reading = boundService.isCurrentlyReading();
+        boolean paused  = boundService.isCurrentlyPaused();
+
+        if (!reading && !paused) {
+            // Chưa đọc gì → bắt đầu từ đầu
+            boundService.setTtsRate(currentRate);
+            boundService.setTtsPitch(currentPitch);
+            boundService.speakFullText(text);
+            playBtn.setImageResource(R.drawable.ic_pause);
+        } else {
+            // Đang đọc / đang pause → toggle
+            boundService.togglePauseResume();
+            syncPlayIcon();
+        }
+    }
+
+    private void stopPlayback() {
+        if (isServiceBound && boundService != null) {
+            boundService.stopReadingAndService();
+        }
+        playBtn.setImageResource(R.drawable.ic_play_button);
+    }
+
     private void syncPlayIcon() {
-        if (!isTtsServiceBound || boundTtsService == null) return;
-        if (boundTtsService.isCurrentlyReading()) {
+        if (!isServiceBound || boundService == null) return;
+        if (boundService.isCurrentlyReading()) {
             playBtn.setImageResource(R.drawable.ic_pause);
         } else {
             playBtn.setImageResource(R.drawable.ic_play_button);
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // PROXIMITY SENSOR
+    // ════════════════════════════════════════════════════════════════════
+
+    private void setupSensor() {
+        SensorManager sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+
+        proximitySensorManager = new ProximitySensorManager(sm, () -> {
+            // Callback chạy trên sensor thread → cần runOnUiThread (BE_Nhi)
+            runOnUiThread(() -> {
+                String text = textInput.getText().toString().trim();
+                if (text.isEmpty() || !isServiceBound || boundService == null) return;
+                // Kích hoạt cảm biến → toggle play/pause qua service
+                handlePlayPause(text);
+            });
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  SETTINGS
+    // ════════════════════════════════════════════════════════════════════
+
+    private void setupSettings() {
+        settingsBtn.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        });
+    }
+
+    private void navigateToFavorites() {
+        Intent intent = new Intent(this, FavoritesActivity.class);
+        startActivity(intent);
     }
 
     // ════════════════════════════════════════════════════════════════════
