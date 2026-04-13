@@ -22,8 +22,20 @@ import java.util.Locale;
 
 /**
  * ════════════════════════════════════════════════════════════════════
- *  PlaybackService  –  TÍNH NĂNG: Chạy ngầm
+ *  PlaybackService  –  TÍNH NĂNG 2.2: Chạy ngầm
  * ════════════════════════════════════════════════════════════════════
+ *
+ *  Là Foreground Service nên hệ thống KHÔNG kill process khi người
+ *  dùng khóa màn hình hoặc chuyển sang app khác.
+ *
+ *  Kiến trúc:
+ *    ┌──────────────────┐  bind   ┌─────────────────────────────┐
+ *    │  MainActivity    │ ──────► │  PlaybackService         │
+ *    │  (UI controls)   │ ◄────── │  - TextToSpeech engine      │
+ *    └──────────────────┘ Binder  │  - Notification + actions   │
+ *                                 │  - Câu-theo-câu playback    │
+ *                                 └─────────────────────────────┘
+ *
  *  Cách dùng từ Activity:
  *    1. bindService() + startService() trong onCreate/onStart
  *    2. Gọi ttsService.speakFullText(text)
@@ -66,6 +78,8 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
     private float ttsRate  = 1.0f;
     /** Cao độ giọng (0.5 – 2.0, mặc định 1.0) */
     private float ttsPitch = 1.0f;
+    /** Voice đang chọn — null = dùng voice mặc định của engine */
+    private android.speech.tts.Voice selectedVoice = null;
 
     /** Text đang chờ TTS engine init xong để đọc */
     private String pendingTextToSpeak = null;
@@ -290,6 +304,61 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
         if (ttsEngine != null && isTtsEngineReady) {
             ttsEngine.setPitch(pitch);
         }
+    }
+
+    /**
+     * Chọn voice theo tên (lấy từ getAvailableVoices()).
+     * Chỉ áp dụng offline voice — không gọi bất kỳ API nào.
+     *
+     * @param voiceName Tên voice, ví dụ "vi-vn-x-vic-local"
+     */
+    public void setVoiceByName(String voiceName) {
+        if (ttsEngine == null || !isTtsEngineReady || voiceName == null) return;
+        try {
+            java.util.Set<android.speech.tts.Voice> voices = ttsEngine.getVoices();
+            if (voices == null) return;
+            for (android.speech.tts.Voice v : voices) {
+                if (v.getName().equals(voiceName)) {
+                    selectedVoice = v;
+                    ttsEngine.setVoice(v);
+                    Log.d(TAG, "Voice đã chọn: " + v.getName()
+                            + " | " + v.getLocale().getDisplayLanguage()
+                            + " | online=" + v.isNetworkConnectionRequired());
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "setVoice lỗi: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Lấy danh sách tất cả voice có sẵn trên thiết bị (offline + online).
+     * Trả về null nếu engine chưa sẵn sàng.
+     */
+    public java.util.List<android.speech.tts.Voice> getAvailableVoices() {
+        if (ttsEngine == null || !isTtsEngineReady) return null;
+        try {
+            java.util.Set<android.speech.tts.Voice> voices = ttsEngine.getVoices();
+            if (voices == null) return null;
+            java.util.List<android.speech.tts.Voice> list = new java.util.ArrayList<>(voices);
+            // Sắp xếp: offline trước, theo locale
+            list.sort((a, b) -> {
+                boolean aOffline = !a.isNetworkConnectionRequired();
+                boolean bOffline = !b.isNetworkConnectionRequired();
+                if (aOffline != bOffline) return aOffline ? -1 : 1;
+                return a.getLocale().toString().compareTo(b.getLocale().toString());
+            });
+            return list;
+        } catch (Exception e) {
+            Log.e(TAG, "getVoices lỗi: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /** @return Tên voice đang chọn, hoặc "Default" nếu chưa chọn */
+    public String getCurrentVoiceName() {
+        return selectedVoice != null ? selectedVoice.getName() : "Default";
     }
 
     /** @return true nếu đang đọc (engine đang phát âm) */
