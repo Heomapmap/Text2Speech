@@ -1,6 +1,7 @@
 package com.example.text2speech;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -12,6 +13,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.speech.tts.Voice;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -27,6 +29,8 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
+import java.util.List;
 
 /**
  * MainActivity
@@ -57,9 +61,15 @@ public class MainActivity extends AppCompatActivity {
     private ImageButton  settingsBtn;
     private LinearLayout favoritesTab;
     private LinearLayout textTab;
-    private TextView btnOpenTxt;   // chip chọn file TXT
-    private TextView btnOpenPdf;   // chip chọn file PDF
-    private TextView tvFileName;   // hiển thị tên file đã chọn
+    private TextView     btnOpenTxt;   // chip chọn file TXT
+    private TextView     btnOpenPdf;   // chip chọn file PDF
+    private TextView     tvFileName;   // hiển thị tên file đã chọn
+
+    // ── Views voice selector (layout gốc BE_Nhi đã có sẵn 3 ID này) ─────────
+    private LinearLayout voiceLayout;   // id: voiceLayout — click → dialog
+    private TextView     tvVoiceName;   // id: voiceName   — tên voice hiện tại
+    private TextView     tvVoiceInfo;   // id: voiceInfo   — "Offline" / "Online"
+
     private float currentRate  = 1.0f;
     private float currentPitch = 1.0f;
 
@@ -76,6 +86,8 @@ public class MainActivity extends AppCompatActivity {
             boundService   = ((PlaybackService.LocalBinder) binder).getService();
             isServiceBound = true;
             syncPlayIcon();
+            // Delay nhỏ cho TTS engine init xong rồi mới query voices
+            playBtn.postDelayed(() -> refreshVoiceDisplay(), 800);
         }
         @Override
         public void onServiceDisconnected(ComponentName name) {
@@ -108,15 +120,12 @@ public class MainActivity extends AppCompatActivity {
     /** SharedPreferences nhẹ để lưu nhanh path file cuối */
     private SharedPreferences ttsPref;
 
-    // ── Hằng SharedPreferences ────────────────────────────────────────────────
-    private static final String TTS_PREF_NAME      = "tts_pref";
-    private static final String KEY_LAST_FILE_PATH  = "last_file_path";
-    private static final String KEY_LAST_FILE_NAME  = "last_file_name";
-
-    // ── Hằng khác ─────────────────────────────────────────────────────────────
-    private static final String PREFS_NAME      = "AppSettings";
-    private static final String PREF_SENSOR_KEY = "sensor_enabled";
-    private static final int    REQ_POST_NOTIF       = 301;
+    private static final String TTS_PREF_NAME     = "tts_pref";
+    private static final String KEY_LAST_FILE_PATH = "last_file_path";
+    private static final String KEY_LAST_FILE_NAME = "last_file_name";
+    private static final String APP_SETTINGS_PREFS = "AppSettings";
+    private static final String KEY_SENSOR_ENABLED = "sensor_enabled";
+    private static final int    REQ_POST_NOTIF      = 301;
 
     // ════════════════════════════════════════════════════════════════════
     //  LIFECYCLE
@@ -127,12 +136,9 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Khởi tạo PDFBox trước khi đọc PDF
-        FileReaderHelper.init(this);
-
-        // Khởi tạo Room Database và SharedPreferences
-        db      = AppDatabase.getDatabase(getApplicationContext());
-        ttsPref = getSharedPreferences(TTS_PREF_NAME, MODE_PRIVATE);
+        FileReaderHelper.init(this);                                      // 2.3
+        db      = AppDatabase.getDatabase(getApplicationContext());       // 2.5
+        ttsPref = getSharedPreferences(TTS_PREF_NAME, MODE_PRIVATE);     // 2.5
 
         bindViews();
         setupFilePicker();     // Phải đăng ký trước onStart
@@ -150,7 +156,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onStart() {
         super.onStart();
         Intent svcIntent = new Intent(this, PlaybackService.class);
-        startService(svcIntent);
+        startService(svcIntent);   // service sống độc lập dù Activity bị ẩn
         bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
     }
 
@@ -159,14 +165,11 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         // Đọc lại trạng thái sensor từ SharedPreferences
         // → người dùng có thể đã thay đổi trong SettingsActivity
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        boolean sensorEnabled = prefs.getBoolean(PREF_SENSOR_KEY, true);
-
+        SharedPreferences p = getSharedPreferences(APP_SETTINGS_PREFS, MODE_PRIVATE);
+        boolean enabled = p.getBoolean(KEY_SENSOR_ENABLED, true);
         if (proximitySensorManager != null) {
-            proximitySensorManager.setEnabled(sensorEnabled);
-            if (sensorEnabled) {
-                proximitySensorManager.register();
-            }
+            proximitySensorManager.setEnabled(enabled);
+            if (enabled) proximitySensorManager.register();
         }
     }
 
@@ -212,6 +215,9 @@ public class MainActivity extends AppCompatActivity {
         settingsBtn  = findViewById(R.id.settingsBtn);
         favoritesTab = findViewById(R.id.favoritesTab);
         textTab      = findViewById(R.id.textTab);
+        voiceLayout  = findViewById(R.id.voiceLayout);
+        tvVoiceName  = findViewById(R.id.voiceName);
+        tvVoiceInfo  = findViewById(R.id.voiceInfo);
         btnOpenTxt   = findViewById(R.id.btnOpenTxt);
         btnOpenPdf   = findViewById(R.id.btnOpenPdf);
         tvFileName   = findViewById(R.id.tvFileName);
@@ -331,6 +337,9 @@ public class MainActivity extends AppCompatActivity {
         // Favorites tab — mở FavoritesActivity (BE_Nhi)
         favoritesTab.setOnClickListener(v ->
                 startActivity(new Intent(this, FavoritesActivity.class)));
+
+        // Voice picker: click vào row VOICE → AlertDialog danh sách giọng offline
+        voiceLayout.setOnClickListener(v -> showVoicePicker());
     }
 
     private void handlePlayPause(String text) {
@@ -358,11 +367,77 @@ public class MainActivity extends AppCompatActivity {
 
     private void syncPlayIcon() {
         if (!isServiceBound || boundService == null) return;
-        if (boundService.isCurrentlyReading()) {
-            playBtn.setImageResource(R.drawable.ic_pause);
+        playBtn.setImageResource(
+                boundService.isCurrentlyReading() ? R.drawable.ic_pause : R.drawable.ic_play_button);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  VOICE PICKER (offline, dùng engine TTS có sẵn của Android)
+    // ════════════════════════════════════════════════════════════════════
+
+    /**
+     * Cập nhật row VOICE hiển thị đúng tên và loại voice thật từ engine.
+     * Được gọi sau khi service bind xong (~800ms sau onServiceConnected).
+     */
+    private void refreshVoiceDisplay() {
+        if (!isServiceBound || boundService == null) return;
+        String voiceName = boundService.getCurrentVoiceName();
+        if ("Default".equals(voiceName)) {
+            // Engine chưa chọn voice cụ thể → hiện tên locale mặc định
+            tvVoiceName.setText("Mặc định hệ thống");
+            tvVoiceInfo.setText("Offline · Vietnamese");
         } else {
-            playBtn.setImageResource(R.drawable.ic_play_button);
+            tvVoiceName.setText(voiceName);
+            tvVoiceInfo.setText("Offline");
         }
+    }
+
+    /**
+     * Hiện AlertDialog danh sách voice offline.
+     * Lấy từ PlaybackService.getAvailableVoices() — hoàn toàn không gọi API.
+     * Voice sắp xếp: offline trước, rồi theo ngôn ngữ.
+     */
+    private void showVoicePicker() {
+        if (!isServiceBound || boundService == null) {
+            Toast.makeText(this, "Service chưa sẵn sàng", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        List<Voice> voices = boundService.getAvailableVoices();
+
+        if (voices == null || voices.isEmpty()) {
+            Toast.makeText(this,
+                    "Không tìm thấy voice — kiểm tra cài đặt TTS trong hệ thống",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // Tạo mảng label hiển thị trong dialog
+        String[] labels = new String[voices.size()];
+        for (int i = 0; i < voices.size(); i++) {
+            Voice v = voices.get(i);
+            String lang    = v.getLocale().getDisplayName();
+            String typeTag = v.isNetworkConnectionRequired() ? "  [online]" : "  ★ offline";
+            // Rút gọn tên kỹ thuật cho dễ đọc (bỏ prefix "vi-vn-x-")
+            String shortName = v.getName().replaceAll("^[a-z]{2}-[a-z]{2}-x-", "");
+            labels[i] = lang + " · " + shortName + typeTag;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Chọn giọng đọc")
+                .setItems(labels, (dialog, which) -> {
+                    Voice chosen = voices.get(which);
+                    boundService.setVoiceByName(chosen.getName());
+
+                    // Cập nhật UI row VOICE ngay lập tức
+                    tvVoiceName.setText(chosen.getLocale().getDisplayName()
+                            + " · " + chosen.getName()
+                            .replaceAll("^[a-z]{2}-[a-z]{2}-x-", ""));
+                    tvVoiceInfo.setText(chosen.isNetworkConnectionRequired()
+                            ? "Online" : "Offline ★");
+                })
+                .setNegativeButton("Hủy", null)
+                .show();
     }
 
     // ════════════════════════════════════════════════════════════════════
