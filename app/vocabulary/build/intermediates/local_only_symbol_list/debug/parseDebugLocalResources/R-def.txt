@@ -1,0 +1,21 @@
+R_DEF: Internal format may change without notice
+local
+color black
+color white
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+id defTextView
+id fragment_container
+id ipaTextView
+id main
+id recycler_view
+id text_view
+layout activity_vocab_detail
+layout activity_vocabulary
+layout item_list
+layout vocab_layout
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+style Base.Theme.MyApplication
+style Theme.MyApplication

@@ -1,0 +1,78 @@
+[
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/layout-land_activity_vocabulary.xml.flat",
+        "source": "com.example.vocabulary-main-37:/layout-land/activity_vocabulary.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-hdpi_ic_launcher.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-hdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/layout_activity_vocabulary.xml.flat",
+        "source": "com.example.vocabulary-main-37:/layout/activity_vocabulary.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xhdpi_ic_launcher.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.example.vocabulary-main-37:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-hdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-hdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xxxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xxxhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xxhdpi_ic_launcher.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xxhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-mdpi_ic_launcher.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-mdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-mdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-mdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xxxhdpi_ic_launcher.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xxxhdpi/ic_launcher.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xxhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xxhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/layout_item_list.xml.flat",
+        "source": "com.example.vocabulary-main-37:/layout/item_list.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.example.vocabulary-main-37:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/mipmap-xhdpi_ic_launcher_round.webp.flat",
+        "source": "com.example.vocabulary-main-37:/mipmap-xhdpi/ic_launcher_round.webp"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/layout_vocab_layout.xml.flat",
+        "source": "com.example.vocabulary-main-37:/layout/vocab_layout.xml"
+    },
+    {
+        "merged": "com.example.vocabulary-debug-35:/layout_activity_vocab_detail.xml.flat",
+        "source": "com.example.vocabulary-main-37:/layout/activity_vocab_detail.xml"
+    }
+]

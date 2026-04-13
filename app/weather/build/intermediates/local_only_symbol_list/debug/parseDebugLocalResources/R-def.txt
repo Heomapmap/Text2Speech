@@ -1,0 +1,22 @@
+R_DEF: Internal format may change without notice
+local
+color black
+color white
+drawable ic_launcher_background
+drawable ic_launcher_foreground
+id cloudTextView
+id humidTextView
+id locationTextView
+id main
+id mapView
+id progressBar
+id rainTextView
+id tempTextView
+id textView
+id windTextView
+layout activity_weather
+mipmap ic_launcher
+mipmap ic_launcher_round
+string app_name
+style Base.Theme.MyApplication
+style Theme.MyApplication

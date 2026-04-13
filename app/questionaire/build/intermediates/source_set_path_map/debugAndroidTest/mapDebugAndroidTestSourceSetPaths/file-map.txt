@@ -1,0 +1,7 @@
+com.example.questionaire.test.questionaire-tracing-1.2.0-0 C:\Users\Admin\.gradle\caches\8.13\transforms\6447d81579d0fd8c0d7c3b06a8abdc5f\transformed\tracing-1.2.0\res
+com.example.questionaire.test.questionaire-core-1.7.0-1 C:\Users\Admin\.gradle\caches\8.13\transforms\75943d732af78654dcf9716b5001f9a2\transformed\core-1.7.0\res
+com.example.questionaire.test.questionaire-androidTest-2 D:\Work\MyApplication\app\questionaire\build\generated\res\resValues\androidTest\debug
+com.example.questionaire.test.questionaire-updated_navigation_xml-3 D:\Work\MyApplication\app\questionaire\build\generated\updated_navigation_xml\debugAndroidTest
+com.example.questionaire.test.questionaire-mergeDebugAndroidTestResources-4 D:\Work\MyApplication\app\questionaire\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\merged.dir
+com.example.questionaire.test.questionaire-mergeDebugAndroidTestResources-5 D:\Work\MyApplication\app\questionaire\build\intermediates\incremental\debugAndroidTest\mergeDebugAndroidTestResources\stripped.dir
+com.example.questionaire.test.questionaire-debugAndroidTest-6 D:\Work\MyApplication\app\questionaire\build\intermediates\merged_res\debugAndroidTest\mergeDebugAndroidTestResources
