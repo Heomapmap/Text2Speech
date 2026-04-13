@@ -85,7 +85,7 @@
         android:background="#2a2a2a">
 
         <LinearLayout
-            android:id="@+id/favoritesTab"
+            android:id="@+id/historiesTab"
             android:layout_width="0dp"
             android:layout_height="56dp"
             android:layout_weight="1"
@@ -101,7 +101,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Favorites"
+                android:text="Histories"
                 android:textSize="10sp"
                 android:textColor="#2196F3"
                 android:layout_marginTop="2dp" />

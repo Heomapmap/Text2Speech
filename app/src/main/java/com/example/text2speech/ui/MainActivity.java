@@ -47,7 +47,7 @@ import java.util.List;
  * BE_Nhi:
  *   - ProximitySensorManager   → cảm biến tiệm cận
  *   - SettingsActivity         → bật/tắt sensor
- *   - FavoritesActivity        → tab yêu thích
+ *   - HistoriesActivity        → tab lịch sử
  * BE_Phong:
  *   - AppDatabase (Room)       → lưu lịch sử đọc
  *   - saveReadingState()       → lưu vị trí câu + tên file
@@ -66,7 +66,7 @@ public class MainActivity extends AppCompatActivity {
     private ImageButton  backBtn;
     private ImageButton  forwardBtn;
     private ImageButton  settingsBtn;
-    private LinearLayout favoritesTab;
+    private LinearLayout historiesTab;
     private LinearLayout textTab;
     private TextView     btnOpenTxt;   // chip chọn file TXT
     private TextView     btnOpenPdf;   // chip chọn file PDF
@@ -220,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
         backBtn      = findViewById(R.id.backBtn);
         forwardBtn   = findViewById(R.id.forwardBtn);
         settingsBtn  = findViewById(R.id.settingsBtn);
-        favoritesTab = findViewById(R.id.favoritesTab);
+        historiesTab = findViewById(R.id.historiesTab);
         textTab      = findViewById(R.id.textTab);
         voiceLayout  = findViewById(R.id.voiceLayout);
         tvVoiceName  = findViewById(R.id.voiceName);
@@ -341,9 +341,9 @@ public class MainActivity extends AppCompatActivity {
         backBtn.setOnClickListener(v -> stopPlayback());
 
         forwardBtn.setOnClickListener(v -> {});
-        // Favorites tab — mở FavoritesActivity (BE_Nhi)
-        favoritesTab.setOnClickListener(v ->
-                startActivity(new Intent(this, FavoritesActivity.class)));
+        // Histories tab — mở HistoriesActivity (BE_Nhi)
+        historiesTab.setOnClickListener(v ->
+                startActivity(new Intent(this, HistoriesActivity.class)));
 
         // Voice picker: click vào row VOICE → AlertDialog danh sách giọng offline
         voiceLayout.setOnClickListener(v -> showVoicePicker());

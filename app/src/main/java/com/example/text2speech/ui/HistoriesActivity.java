@@ -17,11 +17,11 @@ import com.example.text2speech.data.ReadingHistory;
 import java.util.List;
 
 /**
- * FavoritesActivity – Hiển thị lịch sử đọc từ Room Database
+ * HistoriesActivity – Hiển thị lịch sử đọc từ Room Database
  * Dùng Room DB (AppDatabase) để query toàn bộ ReadingHistory
  * rồi đổ động vào LinearLayout — không cần RecyclerView cho danh sách ngắn.
  */
-public class FavoritesActivity extends AppCompatActivity {
+public class HistoriesActivity extends AppCompatActivity {
 
     private LinearLayout historyContainer;
     private LinearLayout emptyState;
@@ -33,7 +33,7 @@ public class FavoritesActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_favorites);
+        setContentView(R.layout.activity_histories);
 
         historyContainer = findViewById(R.id.historyContainer);
         emptyState       = findViewById(R.id.emptyState);
