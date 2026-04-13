@@ -1,9 +1,0 @@
-<?xml version='1.0' encoding='UTF-8' ?>
-<testsuite name="com.example.questionaire.ExampleInstrumentedTest" tests="1" failures="0" errors="0" skipped="0" time="0.853" timestamp="2026-01-27T03:30:07" hostname="localhost">
-  <properties>
-    <property name="device" value="Medium_Phone_API_36.1(AVD) - 16" />
-    <property name="flavor" value="" />
-    <property name="project" value=":app:questionaire" />
-  </properties>
-  <testcase name="useAppContext" classname="com.example.questionaire.ExampleInstrumentedTest" time="0.013" />
-</testsuite>
