@@ -103,6 +103,24 @@
         android:layout_marginTop="0dp" />
 
     <!-- Voice Control Section -->
+
+    <TextView
+        android:id="@+id/btnSaveText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="8dp"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:text="Save"
+        android:textColor="#2196F3"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -14,6 +14,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.speech.tts.Voice;
+import android.text.InputType;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -37,7 +38,10 @@ import com.example.text2speech.data.AppDatabase;
 import com.example.text2speech.data.ReadingHistory;
 import com.example.text2speech.service.PlaybackService;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * MainActivity
@@ -48,6 +52,8 @@ import java.util.List;
  *   - ProximitySensorManager   → cảm biến tiệm cận
  *   - SettingsActivity         → bật/tắt sensor
  *   - HistoriesActivity        → tab lịch sử
+ *   - Bo sung lua chon nhieu ngon ngu
+ *   - Luu text thanh file de xem lai lich su
  * BE_Phong:
  *   - AppDatabase (Room)       → lưu lịch sử đọc
  *   - saveReadingState()       → lưu vị trí câu + tên file
@@ -71,6 +77,10 @@ public class MainActivity extends AppCompatActivity {
     private TextView     btnOpenTxt;   // chip chọn file TXT
     private TextView     btnOpenPdf;   // chip chọn file PDF
     private TextView     tvFileName;   // hiển thị tên file đã chọn
+
+    //Nhi bo sung: nut lưu text dang nhap vao lich su
+    private TextView     btnSaveText;
+
 
     // ── Views voice selector (layout gốc BE_Nhi đã có sẵn 3 ID này) ─────────
     private LinearLayout voiceLayout;   // id: voiceLayout — click → dialog
@@ -228,6 +238,8 @@ public class MainActivity extends AppCompatActivity {
         btnOpenTxt   = findViewById(R.id.btnOpenTxt);
         btnOpenPdf   = findViewById(R.id.btnOpenPdf);
         tvFileName   = findViewById(R.id.tvFileName);
+        //Nhi bo sung
+        btnSaveText = findViewById(R.id.btnSaveText);
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -285,6 +297,62 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /** Luu text nhap tay vao lich su
+     * Hien dialog de nguoi dung dat ten cho doan text
+     * luu vao ReadingHistory voi sourceType = "TEXT"
+     * */
+
+    private void promptSaveTextToHistory() {
+        String text = textInput.getText().toString().trim();
+        if (text.isEmpty()) {
+            Toast.makeText(this, "Ô text đang trống, không có gì để lưu!", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Gợi ý tên mặc định: 25 ký tự đầu + ngày
+        String dateStr = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
+                .format(new Date());
+        String defaultName = (text.length() > 25 ? text.substring(0, 25) + "…" : text)
+                + " (" + dateStr + ")";
+
+        // Dialog nhập tên
+        EditText nameInput = new EditText(this);
+        nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
+        nameInput.setText(defaultName);
+        nameInput.selectAll();
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        nameInput.setPadding(pad, pad / 2, pad, pad / 2);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Đặt tên cho đoạn text")
+                .setView(nameInput)
+                .setPositiveButton("Lưu", (dialog, which) -> {
+                    String title = nameInput.getText().toString().trim();
+                    if (title.isEmpty()) title = defaultName;
+                    saveTextToHistory(title, text);
+                })
+                .setNegativeButton("Hủy", null)
+                .show();
+    }
+
+    /**
+     * Lưu đoạn text vào Room với sourceType = "TEXT".
+     * filePath dùng dạng "text://<timestamp>" để tạo key duy nhất.
+     */
+    private void saveTextToHistory(String title, String content) {
+        long now      = System.currentTimeMillis();
+        String fakeUri = "text://" + now;
+
+        new Thread(() -> {
+            ReadingHistory h = new ReadingHistory(
+                    title, fakeUri, 0, now, "TEXT", content);
+            db.historyDao().insert(h);
+            runOnUiThread(() ->
+                    Toast.makeText(this, "Đã lưu \"" + title + "\" vào lịch sử!",
+                            Toast.LENGTH_SHORT).show());
+        }).start();
+    }
+
     // ════════════════════════════════════════════════════════════════════
     //  SEEKBARS
     // ════════════════════════════════════════════════════════════════════
@@ -340,13 +408,19 @@ public class MainActivity extends AppCompatActivity {
 
         backBtn.setOnClickListener(v -> stopPlayback());
 
-        forwardBtn.setOnClickListener(v -> {});
+        forwardBtn.setOnClickListener(v -> {
+        });
         // Histories tab — mở HistoriesActivity (BE_Nhi)
         historiesTab.setOnClickListener(v ->
                 startActivity(new Intent(this, HistoriesActivity.class)));
 
         // Voice picker: click vào row VOICE → AlertDialog danh sách giọng offline
         voiceLayout.setOnClickListener(v -> showVoicePicker());
+
+        //Nhi bo sung: luu Text
+        if (btnSaveText != null){
+            btnSaveText.setOnClickListener(v -> promptSaveTextToHistory());
+        }
     }
 
     private void handlePlayPause(String text) {
@@ -386,15 +460,18 @@ public class MainActivity extends AppCompatActivity {
      * Cập nhật row VOICE hiển thị đúng tên và loại voice thật từ engine.
      * Được gọi sau khi service bind xong (~800ms sau onServiceConnected).
      */
+    //Nhi bo sung: hien thi them ngon ngu
     private void refreshVoiceDisplay() {
         if (!isServiceBound || boundService == null) return;
         String voiceName = boundService.getCurrentVoiceName();
+        Locale locale = boundService.getCurrentLocale();
+
         if ("Default".equals(voiceName)) {
-            // Engine chưa chọn voice cụ thể → hiện tên locale mặc định
-            tvVoiceName.setText("Mặc định hệ thống");
-            tvVoiceInfo.setText("Offline · Vietnamese");
+            tvVoiceName.setText(locale.getDisplayLanguage(Locale.getDefault()));
+            tvVoiceInfo.setText("Offline · " + locale.getDisplayName());
         } else {
-            tvVoiceName.setText(voiceName);
+            String shortName = voiceName.replaceAll("^[a-z]{2}-[a-z]{2}-x-", "");
+            tvVoiceName.setText(locale.getDisplayLanguage() + " · " + shortName);
             tvVoiceInfo.setText("Offline");
         }
     }
@@ -404,13 +481,15 @@ public class MainActivity extends AppCompatActivity {
      * Lấy từ PlaybackService.getAvailableVoices() — hoàn toàn không gọi API.
      * Voice sắp xếp: offline trước, rồi theo ngôn ngữ.
      */
+
+    //Nhi bo sung : hien thi them ngon ngu
     private void showVoicePicker() {
         if (!isServiceBound || boundService == null) {
             Toast.makeText(this, "Service chưa sẵn sàng", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        List<Voice> voices = boundService.getAvailableVoices();
+        List<Voice> voices = boundService.getAllAvailableVoices();
 
         if (voices == null || voices.isEmpty()) {
             Toast.makeText(this,
@@ -423,23 +502,27 @@ public class MainActivity extends AppCompatActivity {
         String[] labels = new String[voices.size()];
         for (int i = 0; i < voices.size(); i++) {
             Voice v = voices.get(i);
-            String lang    = v.getLocale().getDisplayName();
-            String typeTag = v.isNetworkConnectionRequired() ? "  [online]" : "  ★ offline";
-            // Rút gọn tên kỹ thuật cho dễ đọc (bỏ prefix "vi-vn-x-")
-            String shortName = v.getName().replaceAll("^[a-z]{2}-[a-z]{2}-x-", "");
-            labels[i] = lang + " · " + shortName + typeTag;
+            String langDisplay = v.getLocale().getDisplayLanguage(Locale.getDefault());
+            String typeTag     = v.isNetworkConnectionRequired() ? "  [online]" : "  ★";
+            // Rút gọn tên kỹ thuật: bỏ prefix dạng "vi-vn-x-" hoặc "en-us-x-"
+            String shortName   = v.getName()
+                    .replaceAll("^[a-z]{2}-[a-z]{2}-x-", "")
+                    .replaceAll("^[a-z]{2}_[a-z]{2}-", "");
+            labels[i] = langDisplay + "  ·  " + shortName + typeTag;
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("Chọn giọng đọc")
+                .setTitle("Chọn ngôn ngữ / giọng đọc")
                 .setItems(labels, (dialog, which) -> {
                     Voice chosen = voices.get(which);
                     boundService.setVoiceByName(chosen.getName());
 
-                    // Cập nhật UI row VOICE ngay lập tức
-                    tvVoiceName.setText(chosen.getLocale().getDisplayName()
-                            + " · " + chosen.getName()
-                            .replaceAll("^[a-z]{2}-[a-z]{2}-x-", ""));
+                    // Cập nhật UI ngay
+                    String langDisplay = chosen.getLocale().getDisplayLanguage(Locale.getDefault());
+                    String shortName   = chosen.getName()
+                            .replaceAll("^[a-z]{2}-[a-z]{2}-x-", "")
+                            .replaceAll("^[a-z]{2}_[a-z]{2}-", "");
+                    tvVoiceName.setText(langDisplay + " · " + shortName);
                     tvVoiceInfo.setText(chosen.isNetworkConnectionRequired()
                             ? "Online" : "Offline ★");
                 })
@@ -499,6 +582,7 @@ public class MainActivity extends AppCompatActivity {
                 db.historyDao().insert(new ReadingHistory(fileName, filePath, currentIndex));
             } else {
                 existing.lastReadIndex = currentIndex;
+                existing.timestamp     = System.currentTimeMillis();
                 db.historyDao().update(existing);
             }
         }).start();
