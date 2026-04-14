@@ -28,7 +28,6 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.example.text2speech.core.ProximitySensorManager;
@@ -45,96 +44,64 @@ import java.util.Locale;
 
 /**
  * MainActivity
- * BE_VanQuan:
- *   - PlaybackService binding  → TTS chạy ngầm
- *   - FileReaderHelper + file picker → import TXT/PDF
- * BE_Nhi:
- *   - ProximitySensorManager   → cảm biến tiệm cận
- *   - SettingsActivity         → bật/tắt sensor
- *   - HistoriesActivity        → tab lịch sử
- *   - Bo sung lua chon nhieu ngon ngu
- *   - Luu text thanh file de xem lai lich su
- * BE_Phong:
- *   - AppDatabase (Room)       → lưu lịch sử đọc
- *   - saveReadingState()       → lưu vị trí câu + tên file
- *   - loadReadingState()       → khôi phục phiên đọc trước
+ *
+ * Tính năng bổ sung / sửa lỗi:
+ *  1. Nhiều ngôn ngữ: Voice picker dùng getAllAvailableVoices() – vi → en → khác.
+ *  2. Lưu lịch sử khi import file (đã có, giữ nguyên).
+ *  3. Nút "Lưu" (btnSaveText): dialog đặt tên → lưu text nhập tay vào lịch sử.
+ *  4. backBtn  → boundService.skipBack()    (lùi câu trước)
+ *  5. forwardBtn → boundService.skipForward() (bỏ qua câu tiếp)
+ *  6. Nhận Intent từ HistoriesActivity: load lại file + resume đúng vị trí câu.
  */
 public class MainActivity extends AppCompatActivity {
 
-    // ── Views  ───────────────────────────────────────
+    // ── Views ─────────────────────────────────────────────────────────────────
     private EditText     textInput;
-    private SeekBar      rateSeekBar;
-    private SeekBar      pitchSeekBar;
-    private TextView     rateValue;
-    private TextView     pitchValue;
+    private SeekBar      rateSeekBar, pitchSeekBar;
+    private TextView     rateValue, pitchValue;
     private TextView     resetBtn;
-    private ImageButton  playBtn;
-    private ImageButton  backBtn;
-    private ImageButton  forwardBtn;
-    private ImageButton  settingsBtn;
-    private LinearLayout historiesTab;
-    private LinearLayout textTab;
-    private TextView     btnOpenTxt;   // chip chọn file TXT
-    private TextView     btnOpenPdf;   // chip chọn file PDF
-    private TextView     tvFileName;   // hiển thị tên file đã chọn
-
-    //Nhi bo sung: nut lưu text dang nhap vao lich su
+    private ImageButton  playBtn, backBtn, forwardBtn, settingsBtn;
+    private LinearLayout historiesTab, textTab;
+    private LinearLayout voiceLayout;
+    private TextView     tvVoiceName, tvVoiceInfo;
+    private TextView     btnOpenTxt, btnOpenPdf, tvFileName;
+    /** Nút lưu text nhập tay vào lịch sử */
     private TextView     btnSaveText;
-
-
-    // ── Views voice selector (layout gốc BE_Nhi đã có sẵn 3 ID này) ─────────
-    private LinearLayout voiceLayout;   // id: voiceLayout — click → dialog
-    private TextView     tvVoiceName;   // id: voiceName   — tên voice hiện tại
-    private TextView     tvVoiceInfo;   // id: voiceInfo   — "Offline" / "Online"
+    /** Nút AC: xóa toàn bộ ô text và dừng phát */
+    private TextView     btnClearText;
 
     private float currentRate  = 1.0f;
     private float currentPitch = 1.0f;
 
-    // ════════════════════════════════════════════════════════════════════
-    //  PLAYBACK SERVICE (BE_VanQuan)
-    // ════════════════════════════════════════════════════════════════════
-
+    // ── Service binding ───────────────────────────────────────────────────────
     private PlaybackService boundService   = null;
     private boolean         isServiceBound = false;
 
     private final ServiceConnection serviceConn = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder binder) {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
             boundService   = ((PlaybackService.LocalBinder) binder).getService();
             isServiceBound = true;
             syncPlayIcon();
-            // Delay nhỏ cho TTS engine init xong rồi mới query voices
             playBtn.postDelayed(() -> refreshVoiceDisplay(), 800);
+            // Nếu onCreate() đã nhận Intent lịch sử nhưng service chưa bind → xử lý ngay
+            handleHistoryIntentIfPending();
+            handleHistoryTextIfPending();
         }
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            boundService   = null;
-            isServiceBound = false;
+        @Override public void onServiceDisconnected(ComponentName name) {
+            boundService = null; isServiceBound = false;
         }
     };
 
-    // ════════════════════════════════════════════════════════════════════
-    // FILE PICKER (BE_VanQuan)
-    // ════════════════════════════════════════════════════════════════════
-
+    // ── File picker ──────────────────────────────────────────────────────────
     private ActivityResultLauncher<String[]> filePickerLauncher;
-    /** URI file đang mở — dùng để lưu lịch sử */
     private Uri    currentFileUri  = null;
     private String currentFileName = "";
 
-    // ════════════════════════════════════════════════════════════════════
-    // PROXIMITY SENSOR (BE_Nhi)
-    // ════════════════════════════════════════════════════════════════════
-
+    // ── Proximity sensor ─────────────────────────────────────────────────────
     private ProximitySensorManager proximitySensorManager;
 
-    // ════════════════════════════════════════════════════════════════════
-    //  ROOM DATABASE + SHAREDPREFERENCES (BE_Phong)
-    // ════════════════════════════════════════════════════════════════════
-
-    /** Room database */
-    private AppDatabase db;
-    /** SharedPreferences nhẹ để lưu nhanh path file cuối */
+    // ── Room DB + SharedPreferences ──────────────────────────────────────────
+    private AppDatabase       db;
     private SharedPreferences ttsPref;
 
     private static final String TTS_PREF_NAME     = "tts_pref";
@@ -143,6 +110,14 @@ public class MainActivity extends AppCompatActivity {
     private static final String APP_SETTINGS_PREFS = "AppSettings";
     private static final String KEY_SENSOR_ENABLED = "sensor_enabled";
     private static final int    REQ_POST_NOTIF      = 301;
+
+    // ── Intent từ HistoriesActivity (lưu tạm nếu service chưa bind) ──────────
+    private String pendingHistoryFilePath  = null;
+    private String pendingHistoryFileName  = null;
+    private int    pendingHistoryLastIndex = 0;
+    // TEXT entry từ lịch sử (render về MainActivity thay vì phát thẳng)
+    private String pendingHistoryTextContent = null;
+    private String pendingHistoryTextName    = null;
 
     // ════════════════════════════════════════════════════════════════════
     //  LIFECYCLE
@@ -153,61 +128,188 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        FileReaderHelper.init(this);                                      // 2.3
-        db      = AppDatabase.getDatabase(getApplicationContext());       // 2.5
-        ttsPref = getSharedPreferences(TTS_PREF_NAME, MODE_PRIVATE);     // 2.5
+        FileReaderHelper.init(this);
+        db      = AppDatabase.getDatabase(getApplicationContext());
+        ttsPref = getSharedPreferences(TTS_PREF_NAME, MODE_PRIVATE);
 
         bindViews();
-        setupFilePicker();     // Phải đăng ký trước onStart
-        setupFileButtons();    // chip TXT / PDF
+        setupFilePicker();
+        setupFileButtons();
         setupSeekBars();
-        setupButtons();        // Nối service
-        setupSensor();         // Proximity sensor
-        setupSettings();       // Mở SettingsActivity
-
-        // Khôi phục file đọc dở từ phiên trước
+        setupButtons();
+        setupSensor();
+        setupSettings();
         loadReadingState();
+
+        // Kiểm tra xem có Intent từ HistoriesActivity không
+        parseHistoryIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        parseHistoryIntent(intent);
+        handleHistoryIntentIfPending();
+        handleHistoryTextIfPending();
+    }
+
+    /** Đọc extra từ Intent của HistoriesActivity (nếu có) */
+    private void parseHistoryIntent(Intent intent) {
+        if (intent == null) return;
+
+        // Trường hợp TEXT entry từ lịch sử
+        String textContent = intent.getStringExtra("history_text_content");
+        if (textContent != null && !textContent.isEmpty()) {
+            pendingHistoryTextContent = textContent;
+            pendingHistoryTextName    = intent.getStringExtra("history_text_name");
+            return; // không xử lý FILE intent trong cùng một Intent
+        }
+
+        // Trường hợp FILE entry từ lịch sử
+        String filePath = intent.getStringExtra("history_file_path");
+        if (filePath == null || filePath.isEmpty()) return;
+        pendingHistoryFilePath  = filePath;
+        pendingHistoryFileName  = intent.getStringExtra("history_file_name");
+        pendingHistoryLastIndex = intent.getIntExtra("history_last_index", 0);
+    }
+
+    /**
+     * Xử lý TEXT entry từ lịch sử khi service đã bind:
+     * điền text vào EditText rồi bắt đầu phát — giống như nhập tay và bấm Play.
+     */
+    private void handleHistoryTextIfPending() {
+        if (pendingHistoryTextContent == null) return;
+        if (!isServiceBound || boundService == null) return;
+
+        String content = pendingHistoryTextContent;
+        String name    = pendingHistoryTextName;
+
+        pendingHistoryTextContent = null;
+        pendingHistoryTextName    = null;
+
+        textInput.setText(content);
+        tvFileName.setText(name != null && !name.isEmpty() ? name : "Lịch sử text");
+
+        // Dừng bất kỳ phát âm cũ nào
+        if (boundService.isCurrentlyReading() || boundService.isCurrentlyPaused()) {
+            boundService.forceStopPlayback();
+        }
+
+        boundService.setTtsRate(currentRate);
+        boundService.setTtsPitch(currentPitch);
+        boundService.speakFullText(content);
+        playBtn.setImageResource(R.drawable.ic_pause);
+    }
+
+    /**
+     * Xử lý Intent lịch sử FILE khi service đã bind.
+     * Đọc lại file từ URI, load text vào service, rồi resume đúng vị trí.
+     */
+    private void handleHistoryIntentIfPending() {
+        if (pendingHistoryFilePath == null) return;
+        if (!isServiceBound || boundService == null) return;  // chờ bind xong
+
+        String filePath = pendingHistoryFilePath;
+        String fileName = pendingHistoryFileName;
+        int    lastIdx  = pendingHistoryLastIndex;
+
+        pendingHistoryFilePath  = null;
+        pendingHistoryFileName  = null;
+        pendingHistoryLastIndex = 0;
+
+        // Hiển thị tên file ngay
+        tvFileName.setText(fileName != null ? fileName : "Đang tải...");
+
+        try {
+            Uri uri = Uri.parse(filePath);
+            currentFileUri  = uri;
+            currentFileName = fileName != null ? fileName : "";
+
+            tvFileName.setText("Đang tải...");
+            FileReaderHelper.readFile(this, uri, new FileReaderHelper.ReadCallback() {
+                @Override
+                public void onSuccess(String text) {
+                    runOnUiThread(() -> {
+                        textInput.setText(text);
+                        tvFileName.setText(currentFileName);
+
+                        // Load vào service rồi resume đúng vị trí
+                        if (isServiceBound && boundService != null) {
+                            boundService.setTtsRate(currentRate);
+                            boundService.setTtsPitch(currentPitch);
+                            boundService.loadText(text);
+                            if (lastIdx > 0) {
+                                Toast.makeText(MainActivity.this,
+                                        "Tiếp tục từ câu " + (lastIdx + 1),
+                                        Toast.LENGTH_SHORT).show();
+                            }
+                            boundService.resumeFromIndex(lastIdx);
+                            syncPlayIcon();
+                        }
+                    });
+                }
+                @Override
+                public void onError(String msg) {
+                    runOnUiThread(() -> {
+                        tvFileName.setText("Lỗi tải file");
+                        Toast.makeText(MainActivity.this, "Không tải được file: " + msg,
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+        } catch (Exception e) {
+            Toast.makeText(this, "URI không hợp lệ: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
     }
 
     @Override
     protected void onStart() {
         super.onStart();
         Intent svcIntent = new Intent(this, PlaybackService.class);
-        startService(svcIntent);   // service sống độc lập dù Activity bị ẩn
+        startService(svcIntent);
         bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        // Đọc lại trạng thái sensor từ SharedPreferences
-        // → người dùng có thể đã thay đổi trong SettingsActivity
         SharedPreferences p = getSharedPreferences(APP_SETTINGS_PREFS, MODE_PRIVATE);
         boolean enabled = p.getBoolean(KEY_SENSOR_ENABLED, true);
         if (proximitySensorManager != null) {
             proximitySensorManager.setEnabled(enabled);
             if (enabled) proximitySensorManager.register();
         }
+        // Sync icon play/pause mỗi khi Activity hiển thị lại
+        // (vd: sau khi quay lại từ HistoriesActivity đang phát TEXT)
+        if (isServiceBound && boundService != null) {
+            syncPlayIcon();
+            // Nếu service đang đọc text từ lịch sử (TEXT entry) mà ô EditText trống
+            // → hiển thị text đó vào ô để người dùng thấy và có thể dừng
+            String loaded = boundService.getCurrentFullText();
+            if (!loaded.isEmpty()) {
+                String inBox = textInput.getText().toString().trim();
+                if (inBox.isEmpty()) {
+                    textInput.setText(loaded);
+                }
+            }
+        }
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        //Luôn hủy đăng ký sensor khi Activity không hiển thị (tiết kiệm pin)
         if (proximitySensorManager != null) proximitySensorManager.unregister();
-
-        // Lưu vị trí câu đang đọc khi rời Activity
         if (!currentFileName.isEmpty() && currentFileUri != null
                 && isServiceBound && boundService != null) {
-            int idx = boundService.getCurrentSentenceIndex();
-            saveReadingState(currentFileName, currentFileUri.toString(), idx);
+            saveReadingState(currentFileName, currentFileUri.toString(),
+                    boundService.getCurrentSentenceIndex());
         }
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        // Unbind nhưng KHÔNG stopService → PlaybackService tiếp tục chạy ngầm
         if (isServiceBound) {
             unbindService(serviceConn);
             isServiceBound = false;
@@ -238,19 +340,18 @@ public class MainActivity extends AppCompatActivity {
         btnOpenTxt   = findViewById(R.id.btnOpenTxt);
         btnOpenPdf   = findViewById(R.id.btnOpenPdf);
         tvFileName   = findViewById(R.id.tvFileName);
-        //Nhi bo sung
-        btnSaveText = findViewById(R.id.btnSaveText);
+        btnSaveText  = findViewById(R.id.btnSaveText);
+        btnClearText = findViewById(R.id.btnClearText);
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // FILE PICKER (BE_VanQuan)
+    //  FILE PICKER
     // ════════════════════════════════════════════════════════════════════
 
     private void setupFilePicker() {
         filePickerLauncher = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
-                uri -> { if (uri != null) readAndShowFile(uri); }
-        );
+                uri -> { if (uri != null) readAndShowFile(uri); });
     }
 
     private void setupFileButtons() {
@@ -269,24 +370,17 @@ public class MainActivity extends AppCompatActivity {
             public void onSuccess(String text) {
                 runOnUiThread(() -> {
                     textInput.setText(text);
-
-                    // Lấy tên file từ URI
                     String path = uri.getPath();
                     String name = (path != null && path.contains("/"))
-                            ? path.substring(path.lastIndexOf('/') + 1)
-                            : uri.toString();
-
+                            ? path.substring(path.lastIndexOf('/') + 1) : uri.toString();
                     tvFileName.setText(name);
                     currentFileUri  = uri;
                     currentFileName = name;
-
-                    // Lưu file mới vào lịch sử, index = 0 (đọc từ đầu)
+                    // Lưu lịch sử khi import file
                     saveReadingState(name, uri.toString(), 0);
-
                     Toast.makeText(MainActivity.this, "Đã tải file!", Toast.LENGTH_SHORT).show();
                 });
             }
-
             @Override
             public void onError(String msg) {
                 runOnUiThread(() -> {
@@ -297,36 +391,32 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Luu text nhap tay vao lich su
-     * Hien dialog de nguoi dung dat ten cho doan text
-     * luu vao ReadingHistory voi sourceType = "TEXT"
-     * */
+    // ════════════════════════════════════════════════════════════════════
+    //  [TÍNH NĂNG 3] LƯU TEXT NHẬP TAY VÀO LỊCH SỬ
+    // ════════════════════════════════════════════════════════════════════
 
     private void promptSaveTextToHistory() {
         String text = textInput.getText().toString().trim();
         if (text.isEmpty()) {
-            Toast.makeText(this, "Ô text đang trống, không có gì để lưu!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Ô text đang trống!", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        // Gợi ý tên mặc định: 25 ký tự đầu + ngày
         String dateStr = new SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
                 .format(new Date());
         String defaultName = (text.length() > 25 ? text.substring(0, 25) + "…" : text)
                 + " (" + dateStr + ")";
 
-        // Dialog nhập tên
         EditText nameInput = new EditText(this);
         nameInput.setInputType(InputType.TYPE_CLASS_TEXT);
         nameInput.setText(defaultName);
         nameInput.selectAll();
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        int pad = (int)(16 * getResources().getDisplayMetrics().density);
         nameInput.setPadding(pad, pad / 2, pad, pad / 2);
 
         new AlertDialog.Builder(this)
                 .setTitle("Đặt tên cho đoạn text")
                 .setView(nameInput)
-                .setPositiveButton("Lưu", (dialog, which) -> {
+                .setPositiveButton("Lưu", (d, w) -> {
                     String title = nameInput.getText().toString().trim();
                     if (title.isEmpty()) title = defaultName;
                     saveTextToHistory(title, text);
@@ -335,21 +425,15 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * Lưu đoạn text vào Room với sourceType = "TEXT".
-     * filePath dùng dạng "text://<timestamp>" để tạo key duy nhất.
-     */
     private void saveTextToHistory(String title, String content) {
         long now      = System.currentTimeMillis();
         String fakeUri = "text://" + now;
-
         new Thread(() -> {
             ReadingHistory h = new ReadingHistory(
                     title, fakeUri, 0, now, "TEXT", content);
             db.historyDao().insert(h);
             runOnUiThread(() ->
-                    Toast.makeText(this, "Đã lưu \"" + title + "\" vào lịch sử!",
-                            Toast.LENGTH_SHORT).show());
+                    Toast.makeText(this, "Đã lưu \"" + title + "\"!", Toast.LENGTH_SHORT).show());
         }).start();
     }
 
@@ -359,10 +443,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupSeekBars() {
         rateSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                currentRate = Math.max(progress / 100f, 0.1f);
-                rateValue.setText(progress + "%");
+            @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                currentRate = Math.max(p / 100f, 0.1f);
+                rateValue.setText(p + "%");
                 if (fromUser && isServiceBound && boundService != null)
                     boundService.setTtsRate(currentRate);
             }
@@ -371,10 +454,9 @@ public class MainActivity extends AppCompatActivity {
         });
 
         pitchSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                currentPitch = Math.max(progress / 100f, 0.1f);
-                pitchValue.setText(progress + "%");
+            @Override public void onProgressChanged(SeekBar sb, int p, boolean fromUser) {
+                currentPitch = Math.max(p / 100f, 0.1f);
+                pitchValue.setText(p + "%");
                 if (fromUser && isServiceBound && boundService != null)
                     boundService.setTtsPitch(currentPitch);
             }
@@ -384,10 +466,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  BUTTONS
+    //  BUTTONS — bao gồm backBtn & forwardBtn
     // ════════════════════════════════════════════════════════════════════
 
     private void setupButtons() {
+        // ── Play / Pause ──────────────────────────────────────────────
         playBtn.setOnClickListener(v -> {
             String text = textInput.getText().toString().trim();
             if (text.isEmpty()) {
@@ -401,25 +484,65 @@ public class MainActivity extends AppCompatActivity {
             handlePlayPause(text);
         });
 
+        // ── ← Back: lùi câu trước ─────────────────────────────────────
+        backBtn.setOnClickListener(v -> {
+            if (!isServiceBound || boundService == null) return;
+            boolean hasContent = boundService.getSentenceCount() > 0;
+            if (!hasContent) {
+                // Chưa load text: load rồi đọc từ đầu
+                String text = textInput.getText().toString().trim();
+                if (!text.isEmpty()) {
+                    boundService.setTtsRate(currentRate);
+                    boundService.setTtsPitch(currentPitch);
+                    boundService.speakFullText(text);
+                }
+                return;
+            }
+            boundService.skipBack();
+            syncPlayIcon();
+        });
+
+        // ── → Forward: bỏ qua câu hiện tại ──────────────────────────
+        forwardBtn.setOnClickListener(v -> {
+            if (!isServiceBound || boundService == null) return;
+            boolean hasContent = boundService.getSentenceCount() > 0;
+            if (!hasContent) return;  // chưa load gì thì forward không có nghĩa
+            boundService.skipForward();
+            syncPlayIcon();
+        });
+
+        // ── Reset seekbar ─────────────────────────────────────────────
         resetBtn.setOnClickListener(v -> {
             rateSeekBar.setProgress(50);
             pitchSeekBar.setProgress(50);
         });
 
-        backBtn.setOnClickListener(v -> stopPlayback());
-
-        forwardBtn.setOnClickListener(v -> {
-        });
-        // Histories tab — mở HistoriesActivity (BE_Nhi)
+        // ── Histories tab ─────────────────────────────────────────────
         historiesTab.setOnClickListener(v ->
                 startActivity(new Intent(this, HistoriesActivity.class)));
 
-        // Voice picker: click vào row VOICE → AlertDialog danh sách giọng offline
+        // ── Voice picker ──────────────────────────────────────────────
         voiceLayout.setOnClickListener(v -> showVoicePicker());
 
-        //Nhi bo sung: luu Text
-        if (btnSaveText != null){
+        // ── Lưu text nhập tay ─────────────────────────────────────────
+        if (btnSaveText != null) {
             btnSaveText.setOnClickListener(v -> promptSaveTextToHistory());
+        }
+
+        // ── AC: xóa toàn bộ ô text + dừng phát ──────────────────────
+        if (btnClearText != null) {
+            btnClearText.setOnClickListener(v -> {
+                textInput.setText("");
+                tvFileName.setText("Chưa chọn file");
+                currentFileUri  = null;
+                currentFileName = "";
+                if (isServiceBound && boundService != null
+                        && (boundService.isCurrentlyReading() || boundService.isCurrentlyPaused())) {
+                    boundService.forceStopPlayback();
+                    playBtn.setImageResource(R.drawable.ic_play_button);
+                }
+                Toast.makeText(this, "Đã xóa nội dung", Toast.LENGTH_SHORT).show();
+            });
         }
     }
 
@@ -427,23 +550,26 @@ public class MainActivity extends AppCompatActivity {
         boolean reading = boundService.isCurrentlyReading();
         boolean paused  = boundService.isCurrentlyPaused();
 
-        if (!reading && !paused) {
-            // Chưa đọc gì → bắt đầu từ đầu
+        // Nếu text trong ô khác với text đang chạy → dừng hẳn rồi đọc lại
+        String loadedText  = boundService.getCurrentFullText();
+        boolean textChanged = !text.trim().equals(loadedText.trim());
+
+        if (textChanged && (reading || paused)) {
+            // Dừng phát âm cũ, giữ service sống để đọc ngay text mới
+            boundService.forceStopPlayback();
+        }
+
+        if (textChanged || (!reading && !paused)) {
+            // Đọc text mới từ đầu
             boundService.setTtsRate(currentRate);
             boundService.setTtsPitch(currentPitch);
             boundService.speakFullText(text);
             playBtn.setImageResource(R.drawable.ic_pause);
         } else {
+            // Cùng text đang đọc/pause → toggle pause/resume
             boundService.togglePauseResume();
             syncPlayIcon();
         }
-    }
-
-    private void stopPlayback() {
-        if (isServiceBound && boundService != null) {
-            boundService.stopReadingAndService();
-        }
-        playBtn.setImageResource(R.drawable.ic_play_button);
     }
 
     private void syncPlayIcon() {
@@ -453,99 +579,72 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  VOICE PICKER (offline, dùng engine TTS có sẵn của Android)
+    //  VOICE PICKER — đa ngôn ngữ
     // ════════════════════════════════════════════════════════════════════
 
-    /**
-     * Cập nhật row VOICE hiển thị đúng tên và loại voice thật từ engine.
-     * Được gọi sau khi service bind xong (~800ms sau onServiceConnected).
-     */
-    //Nhi bo sung: hien thi them ngon ngu
     private void refreshVoiceDisplay() {
         if (!isServiceBound || boundService == null) return;
         String voiceName = boundService.getCurrentVoiceName();
-        Locale locale = boundService.getCurrentLocale();
-
+        Locale locale    = boundService.getCurrentLocale();
         if ("Default".equals(voiceName)) {
             tvVoiceName.setText(locale.getDisplayLanguage(Locale.getDefault()));
             tvVoiceInfo.setText("Offline · " + locale.getDisplayName());
         } else {
             String shortName = voiceName.replaceAll("^[a-z]{2}-[a-z]{2}-x-", "");
             tvVoiceName.setText(locale.getDisplayLanguage() + " · " + shortName);
-            tvVoiceInfo.setText("Offline");
+            tvVoiceInfo.setText("Offline ★");
         }
     }
 
-    /**
-     * Hiện AlertDialog danh sách voice offline.
-     * Lấy từ PlaybackService.getAvailableVoices() — hoàn toàn không gọi API.
-     * Voice sắp xếp: offline trước, rồi theo ngôn ngữ.
-     */
-
-    //Nhi bo sung : hien thi them ngon ngu
     private void showVoicePicker() {
         if (!isServiceBound || boundService == null) {
             Toast.makeText(this, "Service chưa sẵn sàng", Toast.LENGTH_SHORT).show();
             return;
         }
-
         List<Voice> voices = boundService.getAllAvailableVoices();
-
         if (voices == null || voices.isEmpty()) {
-            Toast.makeText(this,
-                    "Không tìm thấy voice — kiểm tra cài đặt TTS trong hệ thống",
+            Toast.makeText(this, "Không tìm thấy voice — kiểm tra cài đặt TTS hệ thống",
                     Toast.LENGTH_LONG).show();
             return;
         }
-
-        // Tạo mảng label hiển thị trong dialog
         String[] labels = new String[voices.size()];
         for (int i = 0; i < voices.size(); i++) {
             Voice v = voices.get(i);
             String langDisplay = v.getLocale().getDisplayLanguage(Locale.getDefault());
-            String typeTag     = v.isNetworkConnectionRequired() ? "  [online]" : "  ★";
-            // Rút gọn tên kỹ thuật: bỏ prefix dạng "vi-vn-x-" hoặc "en-us-x-"
             String shortName   = v.getName()
                     .replaceAll("^[a-z]{2}-[a-z]{2}-x-", "")
                     .replaceAll("^[a-z]{2}_[a-z]{2}-", "");
+            String typeTag = v.isNetworkConnectionRequired() ? "  [online]" : "  ★";
             labels[i] = langDisplay + "  ·  " + shortName + typeTag;
         }
-
         new AlertDialog.Builder(this)
                 .setTitle("Chọn ngôn ngữ / giọng đọc")
                 .setItems(labels, (dialog, which) -> {
                     Voice chosen = voices.get(which);
                     boundService.setVoiceByName(chosen.getName());
-
-                    // Cập nhật UI ngay
                     String langDisplay = chosen.getLocale().getDisplayLanguage(Locale.getDefault());
                     String shortName   = chosen.getName()
                             .replaceAll("^[a-z]{2}-[a-z]{2}-x-", "")
                             .replaceAll("^[a-z]{2}_[a-z]{2}-", "");
                     tvVoiceName.setText(langDisplay + " · " + shortName);
-                    tvVoiceInfo.setText(chosen.isNetworkConnectionRequired()
-                            ? "Online" : "Offline ★");
+                    tvVoiceInfo.setText(chosen.isNetworkConnectionRequired() ? "Online" : "Offline ★");
                 })
                 .setNegativeButton("Hủy", null)
                 .show();
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // PROXIMITY SENSOR
+    //  PROXIMITY SENSOR
     // ════════════════════════════════════════════════════════════════════
 
     private void setupSensor() {
         SensorManager sm = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-
-        proximitySensorManager = new ProximitySensorManager(sm, () -> {
-            // Callback chạy trên sensor thread → cần runOnUiThread (BE_Nhi)
-            runOnUiThread(() -> {
-                String text = textInput.getText().toString().trim();
-                if (text.isEmpty() || !isServiceBound || boundService == null) return;
-                // Kích hoạt cảm biến → toggle play/pause qua service
-                handlePlayPause(text);
-            });
-        });
+        proximitySensorManager = new ProximitySensorManager(sm, () ->
+                runOnUiThread(() -> {
+                    String text = textInput.getText().toString().trim();
+                    if (text.isEmpty() || !isServiceBound || boundService == null) return;
+                    handlePlayPause(text);
+                }));
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -558,24 +657,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  SAVE / LOAD READING STATE (BE_Phong)
+    //  SAVE / LOAD READING STATE
     // ════════════════════════════════════════════════════════════════════
 
-    /**
-     * Lưu trạng thái đọc vào Room Database + SharedPreferences.
-     *
-     * @param fileName     Tên file hiển thị (ví dụ "Triết Mác-Lênin.pdf")
-     * @param filePath     Đường dẫn / URI string của file
-     * @param currentIndex Vị trí câu đang đọc (từ PlaybackService.getCurrentSentenceIndex())
-     */
     public void saveReadingState(String fileName, String filePath, int currentIndex) {
-        // SharedPreferences: lưu nhanh path file cuối
         ttsPref.edit()
                 .putString(KEY_LAST_FILE_PATH, filePath)
                 .putString(KEY_LAST_FILE_NAME, fileName)
                 .apply();
-
-        // Room: lưu tiến độ đọc chi tiết
         new Thread(() -> {
             ReadingHistory existing = db.historyDao().getHistoryByPath(filePath);
             if (existing == null) {
@@ -588,64 +677,29 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    /**
-     * Khôi phục trạng thái đọc từ phiên trước.
-     * Copy nguyên logic từ Text2SpeechActivity (BE_Phong).
-     *
-     * Gọi trong onCreate() — nếu người dùng từng đọc file nào thì
-     * hiển thị lại tên file và cuộn đến câu đã đọc dở.
-     */
     private void loadReadingState() {
         String savedPath = ttsPref.getString(KEY_LAST_FILE_PATH, "");
         String savedName = ttsPref.getString(KEY_LAST_FILE_NAME, "");
-
-        if (savedPath.isEmpty()) return; // Chưa từng đọc file nào
-
-        // Cập nhật tên file ngay trên main thread (nhẹ)
+        if (savedPath.isEmpty()) return;
         currentFileName = savedName;
         tvFileName.setText(savedName.isEmpty() ? "File từ phiên trước" : savedName);
-
-        // Truy vấn Room trên background thread
         new Thread(() -> {
             ReadingHistory history = db.historyDao().getHistoryByPath(savedPath);
             if (history == null) return;
-
-            int    savedIndex = history.lastReadIndex;
-            String savedFile  = history.fileName;
-
+            int    idx  = history.lastReadIndex;
+            String name = history.fileName;
             runOnUiThread(() -> {
-                tvFileName.setText(savedFile);
-                // TODO: Nếu sau này dùng RecyclerView thay EditText,
-                // gọi adapter.setHighlightPosition(savedIndex) và
-                // recyclerView.scrollToPosition(savedIndex) tại đây.
-                // Hiện tại hiển thị thông báo cho người dùng biết có thể tiếp tục.
-                if (savedIndex > 0) {
+                tvFileName.setText(name);
+                if (idx > 0)
                     Toast.makeText(this,
-                            "Phiên trước đọc đến câu " + (savedIndex + 1)
-                                    + " — nhấn Play để tiếp tục",
+                            "Phiên trước đọc đến câu " + (idx + 1) + " — nhấn Play để tiếp tục",
                             Toast.LENGTH_LONG).show();
-                }
             });
         }).start();
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  PERMISSION — Android 13+
-    // ════════════════════════════════════════════════════════════════════
-
-    private void requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this,
-                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
-                        REQ_POST_NOTIF);
-            }
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  ẨN BÀN PHÍM KHI BẤM RA NGOÀI
+    //  ẨN BÀN PHÍM KHI BẤM RA NGOÀI EditText
     // ════════════════════════════════════════════════════════════════════
 
     @Override

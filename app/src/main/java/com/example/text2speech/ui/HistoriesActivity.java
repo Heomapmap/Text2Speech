@@ -273,48 +273,54 @@ public class HistoriesActivity extends AppCompatActivity {
      */
     private void playHistory(ReadingHistory entry) {
         if ("TEXT".equals(entry.sourceType)) {
-            // Đọc trực tiếp từ textContent qua PlaybackService
+            // ── TEXT: navigate về MainActivity, điền vào ô text rồi phát ──
             if (entry.textContent == null || entry.textContent.isEmpty()) {
-                Toast.makeText(this, "Nội dung text không còn lưu trữ", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Nội dung text không còn được lưu trữ",
+                        Toast.LENGTH_SHORT).show();
                 return;
             }
-            Intent intent = new Intent(this, PlaybackService.class);
-            intent.setAction(PlaybackService.ACTION_SPEAK_NEW);
-            intent.putExtra(PlaybackService.EXTRA_TEXT_TO_SPEAK, entry.textContent);
-            startService(intent);
-            Toast.makeText(this, "Đang đọc: " + entry.fileName, Toast.LENGTH_SHORT).show();
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.putExtra("history_text_content", entry.textContent);
+            intent.putExtra("history_text_name",
+                    entry.fileName != null ? entry.fileName : "");
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(intent);
+            finish();  // đóng HistoriesActivity để MainActivity hiển thị rõ
+
         } else {
-            // Mở lại MainActivity với file
-            if (entry.filePath == null || entry.filePath.isEmpty()) {
+            // ── FILE: mở MainActivity → load file → resume từ vị trí lưu ──
+            if (entry.filePath == null || entry.filePath.isEmpty()
+                    || entry.filePath.startsWith("text://")) {
                 Toast.makeText(this, "Không tìm thấy đường dẫn file", Toast.LENGTH_SHORT).show();
                 return;
             }
             Intent intent = new Intent(this, MainActivity.class);
-            intent.putExtra("history_file_path", entry.filePath);
-            intent.putExtra("history_file_name", entry.fileName);
+            intent.putExtra("history_file_path",  entry.filePath);
+            intent.putExtra("history_file_name",  entry.fileName != null ? entry.fileName : "");
             intent.putExtra("history_last_index", entry.lastReadIndex);
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            // FLAG_ACTIVITY_SINGLE_TOP: nếu MainActivity đang ở top → gọi onNewIntent
+            // FLAG_ACTIVITY_CLEAR_TOP : đưa MainActivity lên đầu stack
+            intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             startActivity(intent);
+            finish();  // đóng HistoriesActivity để MainActivity hiển thị rõ
         }
     }
 
     // ────────────────────────────────────────────────────────────────────
-    //  ACTION: DELETE
+    //  ACTION: XÓA
     // ────────────────────────────────────────────────────────────────────
 
     private void confirmDelete(ReadingHistory entry) {
         new AlertDialog.Builder(this)
                 .setTitle("Xóa khỏi lịch sử?")
                 .setMessage("\"" + entry.fileName + "\" sẽ bị xóa vĩnh viễn.")
-                .setPositiveButton("Xóa", (d, w) -> {
-                    new Thread(() -> {
-                        db.historyDao().delete(entry);
-                        runOnUiThread(() -> {
-                            Toast.makeText(this, "Đã xóa", Toast.LENGTH_SHORT).show();
-                            loadHistory();
-                        });
-                    }).start();
-                })
+                .setPositiveButton("Xóa", (d, w) -> new Thread(() -> {
+                    db.historyDao().delete(entry);
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Đã xóa", Toast.LENGTH_SHORT).show();
+                        loadHistory();
+                    });
+                }).start())
                 .setNegativeButton("Hủy", null)
                 .show();
     }

@@ -28,106 +28,53 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * ════════════════════════════════════════════════════════════════════
- * PlaybackService  –  TÍNH NĂNG: Chạy ngầm
- * ════════════════════════════════════════════════════════════════════
- * Cách dùng từ Activity:
- * 1. bindService() + startService() trong onCreate/onStart
- * 2. Gọi ttsService.speakFullText(text)
- * 3. Gọi ttsService.togglePauseResume() khi nhấn nút
- * 4. unbindService() trong onStop
- */
-
-/**
- * Nhi bo sung
- * - getAvailableVoices(): tra ve tat ca ngon ngu
- * - setLanguageOnly(Locale): dat ngon ngu
- * - getCurrentLocale(): tra ve ngon ngu hien tai
+ * PlaybackService – TTS chạy ngầm.
  *
+ * Bổ sung so với bản gốc:
+ *  - skipBack()        : lùi lại câu trước (backBtn)
+ *  - skipForward()     : bỏ qua câu hiện tại, đọc câu tiếp (forwardBtn)
+ *  - loadText()        : load text vào bộ nhớ mà KHÔNG đọc ngay
+ *  - resumeFromIndex() : bắt đầu đọc từ câu chỉ định (restore lịch sử)
+ *  - getAllAvailableVoices(): tất cả ngôn ngữ, nhóm vi → en → khác
  */
 public class PlaybackService extends Service implements TextToSpeech.OnInitListener {
 
     private static final String TAG = "PlaybackService";
 
-    // ── Notification constants ────────────────────────────────────────────────
     static final String NOTIF_CHANNEL_ID = "tts_bg_channel_vq";
-    static final int NOTIF_ID = 2200;
+    static final int    NOTIF_ID          = 2200;
 
-    // ── Broadcast actions cho các nút trên notification ──────────────────────
-    // Dùng package name đầy đủ để tránh xung đột với receiver khác
-    public static final String ACTION_TOGGLE = "com.example.text2speech.vq.TOGGLE";
-    public static final String ACTION_STOP = "com.example.text2speech.vq.STOP";
-    // Nhận text bôi đen từ ContextMenuActivity
-    public static final String ACTION_SPEAK_NEW = "com.example.text2speech.vq.SPEAK_NEW";
+    public static final String ACTION_TOGGLE       = "com.example.text2speech.vq.TOGGLE";
+    public static final String ACTION_STOP         = "com.example.text2speech.vq.STOP";
+    public static final String ACTION_SPEAK_NEW    = "com.example.text2speech.vq.SPEAK_NEW";
     public static final String EXTRA_TEXT_TO_SPEAK = "text_to_speak";
 
-    // ── TextToSpeech engine ───────────────────────────────────────────────────
     private TextToSpeech ttsEngine;
-    private boolean isTtsEngineReady = false;
+    private boolean      isTtsEngineReady = false;
 
-    // ── Trạng thái phát ──────────────────────────────────────────────────────
-    /**
-     * Mảng câu được split từ văn bản gốc
-     */
-    private String[] sentenceArray = new String[0];
-    /**
-     * Chỉ số câu đang đọc
-     */
-    private int currentSentIdx = 0;
-    /**
-     * true = engine đang phát âm
-     */
-    private boolean isReading = false;
-    /**
-     * true = người dùng nhấn Dừng tạm (nhớ vị trí câu)
-     */
-    private boolean isPaused = false;
+    private String[] sentenceArray   = new String[0];
+    private int      currentSentIdx  = 0;
+    private boolean  isReading       = false;
+    private boolean  isPaused        = false;
+    /** Toàn bộ text đang được load (dùng để MainActivity so sánh khi bấm Play) */
+    private String   currentFullText = "";
 
-    // ── Cài đặt phát âm ──────────────────────────────────────────────────────
-    /**
-     * Tốc độ đọc (0.5 – 2.0, mặc định 1.0)
-     */
-    private float ttsRate = 1.0f;
-    /**
-     * Cao độ giọng (0.5 – 2.0, mặc định 1.0)
-     */
-    private float ttsPitch = 1.0f;
-    /**
-     * Voice đang chọn — null = dùng voice mặc định của engine
-     */
-    private android.speech.tts.Voice selectedVoice = null;
+    private float  ttsRate       = 1.0f;
+    private float  ttsPitch      = 1.0f;
+    private Voice  selectedVoice = null;
+    private Locale currentLocale = new Locale("vi", "VN");
 
-    /**
-     * Text đang chờ TTS engine init xong để đọc
-     */
     private String pendingTextToSpeak = null;
 
     private NotificationManager notifManager;
-    /**
-     * Handler để post callback về main thread (UtteranceProgressListener chạy trên bg thread)
-     */
     private final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
-
-    //Nhi bo sung
-    private Locale currentLocale = new Locale("vi", "VN");
-
-    // ── Binder ───────────────────────────────────────────────────────────────
     private final IBinder localBinder = new LocalBinder();
 
-    /**
-     * LocalBinder cho phép MainActivity lấy reference đến Service
-     * mà không cần truyền qua Intent (binding pattern).
-     */
     public class LocalBinder extends Binder {
-        public PlaybackService getService() {
-            return PlaybackService.this;
-        }
+        public PlaybackService getService() { return PlaybackService.this; }
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return localBinder;
-    }
+    @Override public IBinder onBind(Intent intent) { return localBinder; }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -136,379 +83,268 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
         super.onCreate();
         notifManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         createNotificationChannel();
-        // Khởi tạo TTS – callback onInit() được gọi sau khi engine sẵn sàng
         ttsEngine = new TextToSpeech(this, this);
     }
 
-    /**
-     * Callback từ TextToSpeech.OnInitListener.
-     * Chạy trên main thread, được gọi sau khi TTS engine bind xong.
-     */
     @Override
     public void onInit(int status) {
         if (status != TextToSpeech.SUCCESS) {
-            Log.e(TAG, "TTS engine khởi tạo thất bại (status=" + status + ")");
+            Log.e(TAG, "TTS engine init thất bại (status=" + status + ")");
             return;
         }
-
-        // Ưu tiên tiếng Việt, fallback sang tiếng Anh nếu device không hỗ trợ
         int langResult = ttsEngine.setLanguage(new Locale("vi", "VN"));
         if (langResult == TextToSpeech.LANG_MISSING_DATA
                 || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-            Log.w(TAG, "Tiếng Việt không hỗ trợ → fallback tiếng Anh");
             ttsEngine.setLanguage(Locale.US);
             currentLocale = Locale.US;
         }
 
-        // Lắng nghe tiến trình từng câu để tự động chuyển câu tiếp theo
         ttsEngine.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-
-            @Override
-            public void onStart(String utteranceId) {
-                // Chạy trên background thread → cần post về main thread
+            @Override public void onStart(String id) {
                 mainThreadHandler.post(() -> {
                     isReading = true;
-                    isPaused = false;
-                    updateNotification(); // cập nhật icon pause trên notification
+                    isPaused  = false;
+                    updateNotification();
                 });
             }
-
-            @Override
-            public void onDone(String utteranceId) {
-                // Câu hiện tại xong → tự động chuyển câu tiếp
+            @Override public void onDone(String id) {
                 mainThreadHandler.post(() -> {
                     currentSentIdx++;
                     speakCurrentSentence();
                 });
             }
-
-            @Override
-            public void onError(String utteranceId) {
-                Log.e(TAG, "TTS lỗi tại utterance: " + utteranceId);
+            @Override public void onError(String id) {
                 mainThreadHandler.post(() -> {
                     currentSentIdx++;
-                    speakCurrentSentence(); // bỏ qua câu lỗi, đọc câu tiếp
+                    speakCurrentSentence();
                 });
             }
         });
 
         isTtsEngineReady = true;
-        Log.d(TAG, "TTS engine sẵn sàng");
-
-        // Nếu có text đang chờ (gọi speakFullText() trước khi engine init xong)
         if (pendingTextToSpeak != null) {
             speakFullText(pendingTextToSpeak);
             pendingTextToSpeak = null;
         }
     }
 
-    /**
-     * Xử lý Intent từ nút bấm trên Notification.
-     * Service phải được start (không chỉ bind) để nhận onStartCommand.
-     */
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && intent.getAction() != null) {
             switch (intent.getAction()) {
-                case ACTION_TOGGLE:
-                    togglePauseResume();
-                    break;
-                case ACTION_STOP:
-                    stopReadingAndService();
-                    break;
-                // Text bôi đen từ ContextMenuActivity → đọc ngay
+                case ACTION_TOGGLE:   togglePauseResume(); break;
+                case ACTION_STOP:     stopReadingAndService(); break;
                 case ACTION_SPEAK_NEW:
-                    String newText = intent.getStringExtra(EXTRA_TEXT_TO_SPEAK);
-                    if (newText != null && !newText.isEmpty()) {
+                    String text = intent.getStringExtra(EXTRA_TEXT_TO_SPEAK);
+                    if (text != null && !text.isEmpty()) {
                         startForeground(NOTIF_ID, buildNotification());
-                        speakFullText(newText);
+                        speakFullText(text);
                     }
                     break;
             }
         }
-        // START_STICKY: hệ thống tự restart service nếu bị kill, truyền intent=null
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        if (ttsEngine != null) {
-            ttsEngine.stop();
-            ttsEngine.shutdown();
-            ttsEngine = null;
-        }
-        Log.d(TAG, "Service destroyed");
+        if (ttsEngine != null) { ttsEngine.stop(); ttsEngine.shutdown(); ttsEngine = null; }
     }
 
     // ════════════════════════════════════════════════════════════════════
-    //  PUBLIC API – Được gọi từ MainActivity thông qua Binder
+    //  PUBLIC API
     // ════════════════════════════════════════════════════════════════════
 
-    /**
-     * Bắt đầu đọc văn bản từ đầu.
-     * Tự động split thành từng câu theo dấu câu và xuống dòng.
-     *
-     * @param fullText Toàn bộ văn bản cần đọc
-     */
+    /** Đọc toàn bộ text từ đầu (câu 0) */
     public void speakFullText(String fullText) {
         if (fullText == null || fullText.trim().isEmpty()) return;
-
-        // Nếu TTS chưa sẵn sàng → lưu tạm, sẽ đọc sau khi onInit() chạy xong
-        if (!isTtsEngineReady) {
-            pendingTextToSpeak = fullText;
-            return;
-        }
-
-        // Split câu theo dấu câu kết thúc (. ! ?) hoặc ký tự xuống dòng
-        // Regex: sau dấu câu kết thúc có khoảng trắng → tách câu
-        sentenceArray = fullText.trim().split("(?<=[.!?。])\\s+|\\n+");
-        currentSentIdx = 0;
-        isReading = false;
-        isPaused = false;
-
-        // Đưa Service lên foreground trước khi đọc (hiện notification)
+        if (!isTtsEngineReady) { pendingTextToSpeak = fullText; return; }
+        currentFullText = fullText.trim();
+        sentenceArray   = splitSentences(fullText);
+        currentSentIdx  = 0;
+        isReading = false; isPaused = false;
         startForeground(NOTIF_ID, buildNotification());
         speakCurrentSentence();
     }
 
     /**
-     * Toggle Pause ↔ Resume.
-     * Khi Pause: dừng engine nhưng GIỮ nguyên currentSentIdx.
-     * Khi Resume: tiếp tục từ câu đang dừng.
+     * Load text vào bộ nhớ mà KHÔNG đọc ngay.
+     * Gọi trước resumeFromIndex() khi restore file từ lịch sử.
      */
-    public void togglePauseResume() {
-        if (isPaused) {
-            // Resume: đọc lại từ câu bị dừng
-            isPaused = false;
-            speakCurrentSentence();
-        } else if (isReading) {
-            // Pause: stop engine, đánh dấu dừng
-            ttsEngine.stop();
-            isReading = false;
-            isPaused = true;
-            updateNotification();
-        }
-        // Nếu không phải isReading và không isPaused → chưa có gì để toggle
+    public void loadText(String fullText) {
+        if (fullText == null || fullText.trim().isEmpty()) return;
+        if (ttsEngine != null) ttsEngine.stop();
+        currentFullText = fullText.trim();
+        sentenceArray   = splitSentences(fullText);
+        isReading = false; isPaused = false;
     }
 
     /**
-     * Dừng hoàn toàn và reset về đầu.
+     * Bắt đầu đọc từ câu chỉ định.
+     * Dùng sau loadText() để resume từ vị trí lưu trong lịch sử.
      */
+    public void resumeFromIndex(int index) {
+        if (sentenceArray.length == 0) return;
+        currentSentIdx = (index >= 0 && index < sentenceArray.length) ? index : 0;
+        isReading = false; isPaused = false;
+        startForeground(NOTIF_ID, buildNotification());
+        speakCurrentSentence();
+    }
+
+    /** Toggle Pause ↔ Resume */
+    public void togglePauseResume() {
+        if (isPaused) {
+            isPaused = false;
+            speakCurrentSentence();
+        } else if (isReading) {
+            ttsEngine.stop();
+            isReading = false; isPaused = true;
+            updateNotification();
+        }
+    }
+
+    /**
+     * ← Lùi về câu trước (backBtn).
+     * Nếu đang ở câu đầu → đọc lại câu đầu.
+     * Hoạt động cả khi đang đọc lẫn đang pause.
+     */
+    public void skipBack() {
+        if (sentenceArray.length == 0) return;
+        if (ttsEngine != null) ttsEngine.stop();
+        currentSentIdx = Math.max(0, currentSentIdx - 1);
+        isReading = false; isPaused = false;
+        startForeground(NOTIF_ID, buildNotification());
+        speakCurrentSentence();
+    }
+
+    /**
+     * → Bỏ qua câu hiện tại, đọc câu tiếp (forwardBtn).
+     * Nếu đang ở câu cuối → kết thúc.
+     * Hoạt động cả khi đang đọc lẫn đang pause.
+     */
+    public void skipForward() {
+        if (sentenceArray.length == 0) return;
+        if (ttsEngine != null) ttsEngine.stop();
+        currentSentIdx++;
+        isReading = false; isPaused = false;
+        if (currentSentIdx >= sentenceArray.length) {
+            stopReadingAndService();
+            return;
+        }
+        startForeground(NOTIF_ID, buildNotification());
+        speakCurrentSentence();
+    }
+
+    /** Dừng hoàn toàn và dọn dẹp */
     public void stopReadingAndService() {
         if (ttsEngine != null) ttsEngine.stop();
-        isReading = false;
-        isPaused = false;
-        currentSentIdx = 0;
-        // Xóa notification và đưa service ra khỏi foreground
+        isReading = false; isPaused = false; currentSentIdx = 0;
+        currentFullText = "";
         stopForeground(true);
         stopSelf();
     }
 
     /**
-     * Cập nhật tốc độ đọc.
-     * Có hiệu lực ngay cho câu tiếp theo.
-     *
-     * @param rate 0.5 (chậm) – 2.0 (nhanh), mặc định 1.0
+     * Dừng phát âm và reset trạng thái NHƯNG không kill service.
+     * Dùng khi muốn đọc text mới ngay lập tức mà không cần bind lại.
      */
+    public void forceStopPlayback() {
+        if (ttsEngine != null) ttsEngine.stop();
+        isReading = false; isPaused = false; currentSentIdx = 0;
+        currentFullText = "";
+        stopForeground(true);
+    }
+
     public void setTtsRate(float rate) {
         ttsRate = rate;
-        if (ttsEngine != null && isTtsEngineReady) {
-            ttsEngine.setSpeechRate(rate);
-        }
+        if (ttsEngine != null && isTtsEngineReady) ttsEngine.setSpeechRate(rate);
     }
 
-    /**
-     * Cập nhật cao độ giọng đọc.
-     *
-     * @param pitch 0.5 (thấp) – 2.0 (cao), mặc định 1.0
-     */
     public void setTtsPitch(float pitch) {
         ttsPitch = pitch;
-        if (ttsEngine != null && isTtsEngineReady) {
-            ttsEngine.setPitch(pitch);
-        }
+        if (ttsEngine != null && isTtsEngineReady) ttsEngine.setPitch(pitch);
     }
 
-    /**
-     * Chọn voice theo tên (lấy từ getAvailableVoices()).
-     * Chỉ áp dụng offline voice — không gọi bất kỳ API nào.
-     *
-     * @param voiceName Tên voice, ví dụ "vi-vn-x-vic-local"
-     */
     public void setVoiceByName(String voiceName) {
         if (ttsEngine == null || !isTtsEngineReady || voiceName == null) return;
-
         List<Voice> voices = getAllAvailableVoices();
         if (voices == null) return;
-
         for (Voice v : voices) {
             if (v.getName().equals(voiceName)) {
-                selectedVoice = v;
-                currentLocale = v.getLocale();
-                ttsEngine.setVoice(v);
-                // Đảm bảo ngôn ngữ cũng được set khớp với voice
-                ttsEngine.setLanguage(v.getLocale());
+                selectedVoice = v; currentLocale = v.getLocale();
+                ttsEngine.setVoice(v); ttsEngine.setLanguage(v.getLocale());
                 return;
             }
         }
     }
 
-
-    /**
-     * Nhi bo sung
-     * Dat ngon ngu (khong chon voice cu the)
-     *
-     */
-
     public void setLanguageOnly(Locale locale) {
         if (ttsEngine == null || !isTtsEngineReady || locale == null) return;
-        currentLocale = locale;
-        selectedVoice = null;
+        currentLocale = locale; selectedVoice = null;
         ttsEngine.setLanguage(locale);
     }
 
     /**
-     * Lấy danh sách tất cả voice có sẵn trên thiết bị (offline + online).
-     * Trả về null nếu engine chưa sẵn sàng.
+     * Tất cả voice có trên máy, nhóm: vi → en → ngôn ngữ khác.
+     * Trong mỗi nhóm: offline trước, rồi sort theo tên.
      */
-
-    //Nhi sua getAvailableLanguage thanh getAllAvailableLanguage
     public List<Voice> getAllAvailableVoices() {
         if (ttsEngine == null || !isTtsEngineReady) return null;
         try {
-            Set<Voice> allVoicesSet = ttsEngine.getVoices();
-            if (allVoicesSet == null) return null;
-
-            List<Voice> vi = new ArrayList<>();
-            List<Voice> en = new ArrayList<>();
-            List<Voice> others = new ArrayList<>();
-
-            for (Voice v : allVoicesSet) {
+            Set<Voice> all = ttsEngine.getVoices();
+            if (all == null) return null;
+            List<Voice> vi = new ArrayList<>(), en = new ArrayList<>(), others = new ArrayList<>();
+            for (Voice v : all) {
                 String lang = v.getLocale().getLanguage();
-                if (lang.equals("vi")) vi.add(v);
+                if      (lang.equals("vi")) vi.add(v);
                 else if (lang.equals("en")) en.add(v);
-                else others.add(v);
+                else                        others.add(v);
             }
-
-            // Trong mỗi nhóm: offline trước, rồi sort theo tên
-            sortVoices(vi);
-            sortVoices(en);
-            sortVoices(others);
-
+            sortVoices(vi); sortVoices(en); sortVoices(others);
             List<Voice> result = new ArrayList<>();
-            result.addAll(vi);
-            result.addAll(en);
-            result.addAll(others);
+            result.addAll(vi); result.addAll(en); result.addAll(others);
             return result;
         } catch (Exception e) {
-            Log.e(TAG, "Lỗi lấy danh sách voice: " + e.getMessage());
+            Log.e(TAG, "Lỗi lấy voice: " + e.getMessage());
             return null;
         }
     }
 
+    @Deprecated
+    public List<Voice> getAvailableVoices() { return getAllAvailableVoices(); }
 
-//    public java.util.List<android.speech.tts.Voice> getAvailableVoices() {
-//        if (ttsEngine == null || !isTtsEngineReady) return null;
-//        try {
-//            java.util.Set<android.speech.tts.Voice> allVoicesSet = ttsEngine.getVoices();
-//            if (allVoicesSet == null) return null;
-//            java.util.List<android.speech.tts.Voice> vietnameseVoices = new java.util.ArrayList<>();
-//            for (android.speech.tts.Voice v : allVoicesSet) {
-//                // Chỉ lấy các giọng có ngôn ngữ là tiếng Việt (vi)
-//                if (v.getLocale().getLanguage().startsWith("vi")) {
-//                    vietnameseVoices.add(v);
-//                }
-//            }
-//
-//            // Sắp xếp: Giọng Offline lên đầu, sau đó mới đến giọng Online
-//            vietnameseVoices.sort((a, b) -> {
-//                boolean aOffline = !a.isNetworkConnectionRequired();
-//                boolean bOffline = !b.isNetworkConnectionRequired();
-//                if (aOffline != bOffline) return aOffline ? -1 : 1;
-//                return a.getName().compareTo(b.getName());
-//            });
-//
-//            return vietnameseVoices;
-//        } catch (Exception e) {
-//            Log.e(TAG, "Lỗi lọc giọng: " + e.getMessage());
-//            return null;
-//        }
-//    }
-
-    /**
-     * @return Tên voice đang chọn, hoặc "Default" nếu chưa chọn
-     */
-    public String getCurrentVoiceName() {
-        return selectedVoice != null ? selectedVoice.getName() : "Default";
-    }
-
-    public Locale getCurrentLocale() {
-        return currentLocale;
-    }
-
-    /**
-     * @return true nếu đang đọc (engine đang phát âm)
-     */
-    public boolean isCurrentlyReading() {
-        return isReading;
-    }
-
-    /**
-     * @return true nếu đang dừng tạm (nhớ vị trí, có thể resume)
-     */
-    public boolean isCurrentlyPaused() {
-        return isPaused;
-    }
-
-    /**
-     * @return Chỉ số câu đang đọc (dùng để highlight phía Activity nếu cần)
-     */
-    public int getCurrentSentenceIndex() {
-        return currentSentIdx;
-    }
+    public String  getCurrentFullText()          { return currentFullText; }
+    public String  getCurrentVoiceName()          { return selectedVoice != null ? selectedVoice.getName() : "Default"; }
+    public Locale  getCurrentLocale()         { return currentLocale; }
+    public boolean isCurrentlyReading()       { return isReading; }
+    public boolean isCurrentlyPaused()        { return isPaused; }
+    public int     getCurrentSentenceIndex()  { return currentSentIdx; }
+    public int     getSentenceCount()         { return sentenceArray.length; }
 
     // ════════════════════════════════════════════════════════════════════
-    //  INTERNAL HELPERS
+    //  INTERNAL
     // ════════════════════════════════════════════════════════════════════
 
-    /**
-     * Đọc câu tại vị trí currentSentIdx.
-     * Nếu đã hết mảng → kết thúc tự nhiên, xóa notification "ongoing".
-     */
+    private String[] splitSentences(String text) {
+        return text.trim().split("(?<=[.!?。])\\s+|\\n+");
+    }
+
     private void speakCurrentSentence() {
-        // Hết câu → kết thúc
         if (currentSentIdx >= sentenceArray.length) {
-            isReading = false;
-            isPaused = false;
-            updateNotification(); // notification chuyển sang "Hoàn thành" + không ongoing
-            return;
+            isReading = false; isPaused = false;
+            updateNotification(); return;
         }
-
         String sentence = sentenceArray[currentSentIdx].trim();
-
-        // Bỏ qua câu rỗng (do split tạo ra)
-        if (sentence.isEmpty()) {
-            currentSentIdx++;
-            speakCurrentSentence();
-            return;
-        }
-
-        // Áp dụng rate & pitch trước mỗi câu (người dùng có thể thay đổi giữa chừng)
+        if (sentence.isEmpty()) { currentSentIdx++; speakCurrentSentence(); return; }
         ttsEngine.setSpeechRate(ttsRate);
         ttsEngine.setPitch(ttsPitch);
-
-        // Bundle params để truyền utteranceId (bắt buộc để UtteranceProgressListener hoạt động)
         Bundle params = new Bundle();
-        params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID,
-                "sent_" + currentSentIdx);
-        ttsEngine.speak(sentence, TextToSpeech.QUEUE_FLUSH, params,
-                "sent_" + currentSentIdx);
+        ttsEngine.speak(sentence, TextToSpeech.QUEUE_FLUSH, params, "vq_sent_" + currentSentIdx);
     }
 
-    //Nhi bo sung
-    private void sortVoices(List<Voice> voices) {
-        voices.sort((a, b) -> {
+    private void sortVoices(List<Voice> list) {
+        list.sort((a, b) -> {
             boolean aOff = !a.isNetworkConnectionRequired();
             boolean bOff = !b.isNetworkConnectionRequired();
             if (aOff != bOff) return aOff ? -1 : 1;
@@ -516,99 +352,42 @@ public class PlaybackService extends Service implements TextToSpeech.OnInitListe
         });
     }
 
-    ;
+    // ── Notification ──────────────────────────────────────────────────────────
 
-    // ════════════════════════════════════════════════════════════════════
-    //  NOTIFICATION
-    // ════════════════════════════════════════════════════════════════════
-
-    /**
-     * Tạo Notification Channel (bắt buộc từ Android 8.0 / API 26).
-     * Phải tạo trước khi gọi startForeground().
-     */
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    NOTIF_CHANNEL_ID,
-                    "Phát âm ngầm TTS",
-                    NotificationManager.IMPORTANCE_LOW   // LOW = không có âm thanh thông báo
-            );
-            channel.setDescription("Điều khiển Text-to-Speech khi chạy ngầm");
-            channel.setShowBadge(false);
-            notifManager.createNotificationChannel(channel);
+            NotificationChannel ch = new NotificationChannel(
+                    NOTIF_CHANNEL_ID, "Phát âm ngầm TTS", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Điều khiển Text-to-Speech khi chạy ngầm");
+            ch.setShowBadge(false);
+            notifManager.createNotificationChannel(ch);
         }
     }
 
-    /**
-     * Cập nhật notification hiện tại (không tạo mới)
-     */
-    private void updateNotification() {
-        notifManager.notify(NOTIF_ID, buildNotification());
-    }
-
-    /**
-     * Build Notification với 2 action button:
-     * [Tiếp tục / Tạm dừng]  [Dừng hẳn]
-     * <p>
-     * Notification ở trạng thái "ongoing" khi đang đọc hoặc tạm dừng
-     * → người dùng không thể vuốt xóa, phải nhấn Dừng.
-     */
     private Notification buildNotification() {
+        PendingIntent openApp = PendingIntent.getActivity(
+                this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        Intent tI = new Intent(this, PlaybackService.class).setAction(ACTION_TOGGLE);
+        PendingIntent tPI = PendingIntent.getService(this, 1, tI, PendingIntent.FLAG_IMMUTABLE);
+        Intent sI = new Intent(this, PlaybackService.class).setAction(ACTION_STOP);
+        PendingIntent sPI = PendingIntent.getService(this, 2, sI, PendingIntent.FLAG_IMMUTABLE);
 
-        // Tap vào notification → mở lại MainActivity
-        Intent openAppIntent = new Intent(this, MainActivity.class);
-        openAppIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent openAppPending = PendingIntent.getActivity(
-                this, 0, openAppIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        // Nút Toggle (Play/Pause) → gửi action đến onStartCommand
-        Intent toggleIntent = new Intent(this, PlaybackService.class);
-        toggleIntent.setAction(ACTION_TOGGLE);
-        PendingIntent togglePending = PendingIntent.getService(
-                this, 1, toggleIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        // Nút Dừng hẳn
-        Intent stopIntent = new Intent(this, PlaybackService.class);
-        stopIntent.setAction(ACTION_STOP);
-        PendingIntent stopPending = PendingIntent.getService(
-                this, 2, stopIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-        // Chọn icon & label phù hợp với trạng thái
-        int toggleIconRes;
-        String toggleLabel;
-        String statusText;
-
-        if (isReading) {
-            toggleIconRes = R.drawable.ic_pause;
-            toggleLabel = "Tạm dừng";
-            statusText = "Đang đọc câu " + (currentSentIdx + 1) + "/" + sentenceArray.length;
-        } else if (isPaused) {
-            toggleIconRes = R.drawable.ic_play_button;
-            toggleLabel = "Tiếp tục";
-            statusText = "Tạm dừng tại câu " + (currentSentIdx + 1);
-        } else {
-            toggleIconRes = R.drawable.ic_play_button;
-            toggleLabel = "Đọc lại";
-            statusText = "Đã đọc xong";
-        }
+        String status = isReading
+                ? "Đang đọc câu " + (currentSentIdx + 1) + "/" + sentenceArray.length
+                : isPaused ? "Tạm dừng tại câu " + (currentSentIdx + 1) : "Sẵn sàng";
 
         return new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_play_button)
                 .setContentTitle("Text to Speech")
-                .setContentText(statusText)
-                .setContentIntent(openAppPending)
-                // Nút 1: Toggle pause/resume
-                .addAction(toggleIconRes, toggleLabel, togglePending)
-                // Nút 2: Stop hoàn toàn
-                .addAction(R.drawable.ic_pause, "Dừng", stopPending)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                // ongoing=true → không thể vuốt xóa khi đang đọc/pause
+                .setContentText(status)
+                .setSmallIcon(R.drawable.ic_voice)
+                .setContentIntent(openApp)
+                .addAction(R.drawable.ic_pause, isReading ? "Dừng" : "Tiếp tục", tPI)
+                .addAction(R.drawable.ic_back_button, "Kết thúc", sPI)
                 .setOngoing(isReading || isPaused)
-                // Hiện trên màn hình khóa
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .build();
+    }
+
+    private void updateNotification() {
+        if (notifManager != null) notifManager.notify(NOTIF_ID, buildNotification());
     }
 }
