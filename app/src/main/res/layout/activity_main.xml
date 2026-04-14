@@ -1,19 +1,382 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    android:orientation="vertical"
+    android:background="#1a1a1a"
+    android:focusable="true"
+    android:focusableInTouchMode="true">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="#121212">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Text to Speech"
+            android:textSize="18sp"
+            android:textColor="#ffffff"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/settingsBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@drawable/ic_settings"
+            android:background="?attr/selectableItemBackgroundBorderless"/>
+
+    </LinearLayout>
+
+    <!-- ──(2.3): Strip chọn file — nằm gọn dưới header ── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="4dp"
+        android:background="#1e1e1e">
+
+        <!-- Nút TXT -->
+        <TextView
+            android:id="@+id/btnOpenTxt"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:text="TXT"
+            android:textSize="11sp"
+            android:textColor="#2196F3"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:background="@drawable/bg_chip_outline"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Nút PDF -->
+        <TextView
+            android:id="@+id/btnOpenPdf"
+            android:layout_width="wrap_content"
+            android:layout_height="26dp"
+            android:text="PDF"
+            android:textSize="11sp"
+            android:textColor="#2196F3"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:paddingHorizontal="10dp"
+            android:background="@drawable/bg_chip_outline" />
+
+        <!-- Tên file đang mở -->
+        <TextView
+            android:id="@+id/tvFileName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:text="Chưa chọn file"
+            android:textSize="11sp"
+            android:textColor="#555555"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
+    </LinearLayout>
+
+    <!-- Text Input Area -->
+    <EditText
+        android:id="@+id/textInput"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:background="#2a2a2a"
+        android:hint="Tap here to type!"
+        android:textColorHint="#666666"
+        android:textColor="#ffffff"
+        android:padding="16dp"
+        android:gravity="top|left"
+        android:textSize="16sp"
+        android:inputType="textMultiLine"
+        android:layout_margin="16dp"
+        android:layout_marginTop="0dp" />
+
+    <!-- Voice Control Section -->
 
     <TextView
+        android:id="@+id/btnSaveText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        android:layout_gravity="end"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="8dp"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:text="Save"
+        android:textColor="#2196F3"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Voice Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="VOICE"
+                android:textSize="12sp"
+                android:textColor="#888888"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/resetBtn"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Reset"
+                android:textSize="12sp"
+                android:textColor="#2196F3"
+                android:textStyle="bold"
+                android:paddingHorizontal="8dp" />
+
+        </LinearLayout>
+
+        <!-- Voice Selection -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="#2a2a2a"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_voice" />
+
+            <LinearLayout
+                android:id="@+id/voiceLayout"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp">
+
+                <TextView
+                    android:id="@+id/voiceName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Linh"
+                    android:textSize="16sp"
+                    android:textColor="#ffffff"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/voiceInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Female · Vietnamese"
+                    android:textSize="12sp"
+                    android:textColor="#888888"
+                    android:layout_marginTop="4dp" />
+
+            </LinearLayout>
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_arrow_right"
+                app:tint="#666666" />
+
+        </LinearLayout>
+
+        <!-- Rate -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Rate"
+            android:textSize="12sp"
+            android:textColor="#888888"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <SeekBar
+                android:id="@+id/rateSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progress="50"
+                android:max="100"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/rateValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="50%"
+                android:textSize="12sp"
+                android:textColor="#2196F3"
+                android:textStyle="bold"
+                android:minWidth="40dp" />
+
+        </LinearLayout>
+
+        <!-- Pitch -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Pitch"
+            android:textSize="12sp"
+            android:textColor="#888888"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <SeekBar
+                android:id="@+id/pitchSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progress="50"
+                android:max="100"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/pitchValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="50%"
+                android:textSize="12sp"
+                android:textColor="#2196F3"
+                android:textStyle="bold"
+                android:minWidth="40dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Control Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="20dp">
+
+        <ImageButton
+            android:id="@+id/backBtn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_back_button"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="#666666" />
+
+        <ImageButton
+            android:id="@+id/playBtn"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:src="@drawable/ic_play_button"
+            android:background="@android:color/transparent"
+            android:layout_marginHorizontal="32dp" />
+
+        <ImageButton
+            android:id="@+id/forwardBtn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_forward_button"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            app:tint="#666666" />
+
+    </LinearLayout>
+
+    <!-- Bottom Navigation -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#2a2a2a">
+
+        <LinearLayout
+            android:id="@+id/historiesTab"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_star"
+                app:tint="#666666" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Histories"
+                android:textSize="10sp"
+                android:textColor="#666666"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/textTab"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_text"
+                app:tint="#2196F3" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Text"
+                android:textSize="10sp"
+                android:textColor="#2196F3"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

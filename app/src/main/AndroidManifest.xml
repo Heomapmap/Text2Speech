@@ -2,6 +2,21 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--Chạy ngầm -->
+    <!-- Cho phép Service chạy foreground -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Khai báo loại foreground service là mediaPlayback -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Hiện notification trên Android 13+ (API 33+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Storage Access Framework không cần permission đặc biệt,
+         nhưng nếu muốn đọc đường dẫn cũ thì cần READ_EXTERNAL_STORAGE -->
+
+    <!--Tương tác file -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -12,14 +27,42 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Text2Speech">
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--Màn hình favorites-->
+        <activity
+            android:name=".ui.HistoriesActivity" />
+
+        <!--Màn hình settings bặt/tắt sensor -->
+        <activity android:name=".ui.SettingsActivity" />
+
+        <!--Foreground Service -->
+        <service
+            android:name=".service.PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!--Context menu-->
+        <activity
+            android:name=".ui.ContextMenuActivity"
+            android:exported="true"
+            android:label="TTS"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
     </application>
 
 </manifest>
